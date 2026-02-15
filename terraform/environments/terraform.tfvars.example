@@ -29,7 +29,7 @@ github_repository = ""
 # Project
 # =============================================================================
 
-# Short project identifier used for naming resources, DB user/name, etc.
+# Short project identifier used for naming resources
 project_name = "myapp"
 
 # Domain name pointing to the server's floating IP

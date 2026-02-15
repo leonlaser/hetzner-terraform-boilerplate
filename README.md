@@ -46,7 +46,7 @@ Replace the empty values with calls to your secrets manager (1Password CLI, Bitw
 ### 3. Configure your project
 
 ```bash
-cd terraform/environments/_shared
+cd terraform/environments
 
 # Copy the example config
 cp terraform.tfvars.example terraform.tfvars
@@ -56,7 +56,7 @@ $EDITOR terraform.tfvars
 ```
 
 Key values to set:
-- `project_name` - short identifier (used for resource names, DB user/name)
+- `project_name` - short identifier (used for resource names)
 - `github_owner` / `github_repository` - your GitHub repo
 - `domain` - your domain name
 - SMTP host, port, and sender address
@@ -93,7 +93,7 @@ $EDITOR backend.hcl
 ./tf.sh demo apply
 ```
 
-`tf.sh` automatically passes `_shared/terraform.tfvars` to all environments. To override values for a specific environment, create `terraform/environments/<env>/terraform.tfvars` — it takes precedence over the shared file.
+`tf.sh` automatically passes `terraform/environments/terraform.tfvars` to all environments. To override values for a specific environment, create `terraform/environments/<env>/terraform.tfvars` — it takes precedence over the global file.
 
 ### 7. Point DNS
 
@@ -107,17 +107,17 @@ populate-env.sh.example       # Template for secrets population script
 
 terraform/
 ├── environments/
-│   ├── backend.hcl.example   # S3 backend credentials template
-│   ├── _shared/              # Shared variable definitions and config
+│   ├── backend.hcl.example      # S3 backend credentials template
+│   ├── terraform.tfvars.example # Global environment variables template
+│   ├── _shared/                 # Shared variable definitions
 │   │   ├── variables.tf
 │   │   ├── ssh_keys.tf
-│   │   └── terraform.tfvars.example
 │   ├── demo/
-│   │   └── main.tf           # Demo: deploys from 'demo' branch
+│   │   └── main.tf              # Demo: deploys from 'demo' branch
 │   ├── staging/
-│   │   └── main.tf           # Staging: deploys from 'develop' branch
+│   │   └── main.tf              # Staging: deploys from 'develop' branch
 │   └── production/
-│       └── main.tf           # Production: deploys from 'main' branch
+│       └── main.tf              # Production: deploys from 'main' branch
 └── modules/
     └── hetzner-environment/  # Reusable infrastructure module
         ├── main.tf           # Provider requirements
@@ -133,8 +133,8 @@ terraform/
             └── env.tftpl             # .env file template
 
 .github/workflows/
-├── ci.yml                    # Build, test, Docker push, deploy trigger
-└── deploy.yml                # SSH-based deployment via Docker Compose
+├── ci.yml      # Build, test, Docker push, deploy trigger
+└── deploy.yml  # SSH-based deployment via Docker Compose
 ```
 
 ## Customization

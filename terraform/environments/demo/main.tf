@@ -28,8 +28,6 @@ terraform {
   backend "s3" {
     bucket                      = "myapp-demo"
     key                         = "terraform.tfstate"
-    region                      = "eu-central"
-    endpoint                    = "https://your.storage.example"
     use_lockfile                = true
     skip_credentials_validation = true
     skip_metadata_api_check     = true
