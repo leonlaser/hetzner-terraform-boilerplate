@@ -1,0 +1,17 @@
+PermitRootLogin no
+PasswordAuthentication no
+Port ${ssh_port}
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+MaxAuthTries 2
+AllowTcpForwarding ${allow_tcp_forwarding}
+X11Forwarding no
+AllowAgentForwarding no
+AuthorizedKeysFile .ssh/authorized_keys
+AllowUsers ops deploy
+PermitUserEnvironment yes
+LogLevel VERBOSE
+MaxSessions 2
+ClientAliveCountMax 2
+ClientAliveInterval 300
+TCPKeepAlive no

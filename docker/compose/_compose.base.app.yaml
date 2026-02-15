@@ -1,0 +1,50 @@
+services:
+  traefik:
+    image: traefik
+    ports:
+      - "80:80"
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.dashboard.rule: Host(`traefik.${APP_DOMAIN}`)
+      traefik.http.routers.dashboard.service: api@internal
+    networks:
+      - proxy
+
+  frontend:
+    image: ghcr.io/leonlaser/hetzner-terraform-boilerplate/frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ../example-services/frontend
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.frontend.rule: Host(`${APP_DOMAIN}`)
+      traefik.http.services.frontend.loadbalancer.server.port: 80
+    networks:
+      - proxy
+
+  backend:
+    image: ghcr.io/leonlaser/hetzner-terraform-boilerplate/backend:${IMAGE_TAG:-latest}
+    build:
+      context: ../example-services/backend
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - APP_SECRET=${APP_SECRET}
+      - ENVIRONMENT_SPECIFIC_ENV=${ENVIRONMENT_SPECIFIC_ENV}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.backend.rule: (Host(`${APP_DOMAIN}`) && PathPrefix(`/api`))
+      traefik.http.services.backend.loadbalancer.server.port: 3000
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    # Set a fixed name to be able to tell traefik the correct network name,
+    # in case traefik cannot determine the correct network name automatically.
+    # This can be the case for the backend when it shares a separate network
+    # with the database or other, internal services.
+    name: proxy

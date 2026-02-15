@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+echo "=== Pre-deploy backup started: $(date) ==="
+
+echo "Backing up app server..."
+$HOME/scripts/borg-backup.sh
+%{ if database_ip != "" }
+
+echo "Backing up database server..."
+ssh -i ~/.ssh/internal_key -o StrictHostKeyChecking=accept-new ops@${database_ip} "~/scripts/borg-backup.sh"
+%{ endif }
+
+echo "=== Pre-deploy backup finished: $(date) ==="

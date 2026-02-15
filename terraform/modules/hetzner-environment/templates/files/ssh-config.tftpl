@@ -1,0 +1,13 @@
+%{ if storagebox_host != "" ~}
+Host ${storagebox_host}
+  Port 23
+  IdentityFile ~/.ssh/backup_key
+  StrictHostKeyChecking accept-new
+
+%{ endif ~}
+%{ if database_ip != "" ~}
+Host ${database_ip}
+  Port 22
+  IdentityFile ~/.ssh/internal_key
+  StrictHostKeyChecking accept-new
+%{ endif ~}

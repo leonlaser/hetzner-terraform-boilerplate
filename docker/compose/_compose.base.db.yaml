@@ -1,0 +1,27 @@
+services:
+  backend:
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - infrastructure
+
+  database:
+    image: postgres:18
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}" ]
+      interval: 30s
+      timeout: 60s
+      retries: 5
+      start_period: 80s
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - infrastructure
+
+networks:
+  infrastructure:
