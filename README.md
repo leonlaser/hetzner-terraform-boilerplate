@@ -88,18 +88,12 @@ $EDITOR backend.hcl
 ### 6. Initialize and apply
 
 ```bash
-# For each environment, create symlinks first:
-cd terraform/environments/demo
-ln -s ../_shared/variables.tf .
-ln -s ../_shared/ssh_keys.tf .
-ln -s ../_shared/terraform.tfvars .
-
-# Then use tf.sh from the project root:
-cd ../../..
 ./tf.sh demo init
 ./tf.sh demo plan
 ./tf.sh demo apply
 ```
+
+`tf.sh` automatically passes `_shared/terraform.tfvars` to all environments. To override values for a specific environment, create `terraform/environments/<env>/terraform.tfvars` — it takes precedence over the shared file.
 
 ### 7. Point DNS
 

@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENVIRONMENTS_DIR="$SCRIPT_DIR/terraform/environments"
+SHARED_DIR="$ENVIRONMENTS_DIR/_shared"
 VALID_ENVS=("demo" "staging" "production")
 
 # Load secrets
@@ -56,6 +57,16 @@ WORK_DIR="$ENVIRONMENTS_DIR/$ENV"
 EXTRA_ARGS=()
 if [[ "$1" == "init" && -f "$ENVIRONMENTS_DIR/backend.hcl" ]]; then
   EXTRA_ARGS+=("-backend-config=$ENVIRONMENTS_DIR/backend.hcl")
+fi
+
+# Shared tfvars (applied to all environments)
+if [[ -f "$SHARED_DIR/terraform.tfvars" ]]; then
+  EXTRA_ARGS+=("-var-file=$SHARED_DIR/terraform.tfvars")
+fi
+
+# Environment-specific tfvars (overrides shared values)
+if [[ -f "$WORK_DIR/terraform.tfvars" ]]; then
+  EXTRA_ARGS+=("-var-file=$WORK_DIR/terraform.tfvars")
 fi
 
 terraform -chdir="$WORK_DIR" "$@" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
