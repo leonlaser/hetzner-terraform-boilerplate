@@ -1,0 +1,67 @@
+# =============================================================================
+# Hetzner Cloud
+# =============================================================================
+
+# Names of SSH keys already uploaded to your Hetzner project
+ssh_key_names = ["developer"]
+
+# Hetzner datacenter location (default: nbg1)
+# Options: nbg1 (Nuremberg), fsn1 (Falkenstein), hel1 (Helsinki), ash (Ashburn)
+# location = "nbg1"
+
+# Server type (default: cx23)
+# server_type = "cx23"
+
+# Volume size in GB (default: 10)
+# volume_size = 10
+
+# =============================================================================
+# GitHub
+# =============================================================================
+
+# GitHub owner (user or organization name)
+github_owner = ""
+
+# Repository name (without owner prefix)
+github_repository = ""
+
+# =============================================================================
+# Project
+# =============================================================================
+
+# Short project identifier used for naming resources, DB user/name, etc.
+project_name = "myapp"
+
+# Domain name pointing to the server's floating IP
+domain = "app.example"
+
+# Docker registry for pulling container images
+docker_registry = "ghcr.io"
+
+# =============================================================================
+# Email / SMTP
+# =============================================================================
+
+# Email address for unattended-upgrades and server reboot notifications
+unattended_upgrades_mail_to = "admin@app.example"
+
+# Email address for Let's Encrypt ACME certificate notifications
+acme_mail = "acme@app.example"
+
+smtp_host = "smtp.app.example"
+smtp_port = 587
+smtp_from = "no-reply@app.example"
+
+# =============================================================================
+# Application-Specific Environment Variables (optional)
+# =============================================================================
+
+# Add any extra env vars your application needs, beyond the defaults
+# (database, SMTP, domain, Traefik, ACME are already included).
+#
+# app_env_vars = {
+#   JWT_ACCESS_TOKEN_EXPIRES_IN  = "15m"
+#   JWT_REFRESH_TOKEN_EXPIRES_IN = "7d"
+#   PERSISTENCE                  = "prisma"
+#   SOME_API_KEY                 = "secret-value"
+# }

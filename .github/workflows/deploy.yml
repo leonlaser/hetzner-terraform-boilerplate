@@ -1,0 +1,61 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - production
+          - staging
+          - demo
+      image_tag:
+        description: 'Image tag to deploy'
+        required: true
+        type: string
+        default: latest
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ vars.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      # TODO: Adapt the list of compose files to your project
+      - name: Copy compose files
+        run: |
+          scp -i ~/.ssh/deploy_key \
+            compose.yaml compose.prod.yaml \
+            deploy@${{ vars.SERVER_IP }}:~
+
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/deploy_key deploy@${{ vars.SERVER_IP }} \
+            "export IMAGE_TAG='${{ inputs.image_tag }}' && \
+             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ${{ vars.DOCKER_REGISTRY }} -u ${{ github.actor }} --password-stdin && \
+             docker compose -f compose.yaml -f compose.prod.yaml pull && \
+             docker compose -f compose.yaml -f compose.prod.yaml up -d --remove-orphans"

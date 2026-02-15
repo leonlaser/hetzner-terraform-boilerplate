@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Populate Terraform secrets into the environment.
+# =============================================================================
+# Copy this file and wire it up to your secrets manager:
+#   cp populate-env.sh.example populate-env.sh
+#   chmod +x populate-env.sh
+#
+# This script is sourced by tf.sh — it must export TF_VAR_* variables.
+# populate-env.sh is gitignored and should never be committed.
+#
+# Examples using different secrets managers:
+#   1Password CLI:  export TF_VAR_hcloud_token="$(op read 'op://vault/hetzner/token')"
+#   Bitwarden CLI:  export TF_VAR_hcloud_token="$(bw get password 'hetzner-token')"
+#   pass:           export TF_VAR_hcloud_token="$(pass show infra/hetzner-token)"
+#   AWS Secrets:    export TF_VAR_hcloud_token="$(aws secretsmanager get-secret-value --secret-id hetzner-token --query SecretString --output text)"
+# =============================================================================
+
+# S3 Bucket credentials for terraform state
+export AWS_ACCESS_KEY_ID=""
+export AWS_SECRET_ACCESS_KEY=""
+
+# HCloud project API token
+export TF_VAR_hcloud_token=""
+
+# Fine-grained personal access token for the repository
+# Required permissions: administration (r/w), variables (r/w), actions (r),
+#                       environments (r/w), secrets (r/w)
+export TF_VAR_github_token=""
+
+# Credentials for your mail server to send status mails
+export TF_VAR_smtp_user=""
+export TF_VAR_smtp_password=""
+
+# Traefik Dashboard credentials, created with `htpasswd -b`
+export TF_VAR_traefik_dashboard_users=""

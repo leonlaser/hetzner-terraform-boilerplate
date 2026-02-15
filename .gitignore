@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets
+populate-env.sh
+
+# OS
+.DS_Store
+Thumbs.db
