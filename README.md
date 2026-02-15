@@ -127,7 +127,7 @@ terraform/
         ├── network.tf        # VPC, subnet, firewall
         ├── github.tf         # GitHub environment & secrets
         ├── deploy.tf         # .env file provisioning
-        ├── generated.tf      # Auto-generated SSH keys & passwords
+        ├── generated.tf      # Auto-generated SSH keys
         └── templates/
             ├── cloud-init.yml.tftpl  # Server bootstrap
             └── env.tftpl             # .env file template
@@ -141,19 +141,54 @@ terraform/
 
 ### Application Environment Variables
 
-The module provides common env vars out of the box (database, SMTP, domain, Traefik, ACME, app secret). To add application-specific variables, use the `app_env_vars` map:
+The module deploys a `.env` file to `/home/deploy/.env` on the server. It contains a small set of infrastructure variables by default:
+
+- `APP_DOMAIN`, `ACME_MAIL`, `ACME_STORAGE_DIR` — domain and Let's Encrypt config
+- `TRAEFIK_DASHBOARD_USERS` — Traefik basic auth
+
+All application-specific variables (database, SMTP, secrets, etc.) are defined via the `app_env_vars` map. Values in `app_env_vars` are merged with the base infra vars and can override them.
+
+**Static vars** go in `terraform.tfvars`:
 
 ```hcl
-# In terraform.tfvars
 app_env_vars = {
-  JWT_ACCESS_TOKEN_EXPIRES_IN  = "15m"
-  JWT_REFRESH_TOKEN_EXPIRES_IN = "7d"
-  PERSISTENCE                  = "prisma"
-  SOME_API_KEY                 = "secret-value"
+  NODE_ENV = "production"
+  DB_HOST  = "database"
+  DB_PORT  = "5432"
+  DB_NAME  = "myapp"
+  DB_USER  = "myapp"
 }
 ```
 
-These are merged with the base env vars and deployed to `/home/deploy/.env` on the server.
+**Generated secrets** (passwords, tokens) should be created at the environment level and merged in the environment's `main.tf`:
+
+```hcl
+# terraform/environments/production/main.tf
+
+resource "random_password" "db" {
+  length  = 64
+  special = false
+}
+
+resource "random_password" "app_secret" {
+  length  = 64
+  special = false
+}
+
+module "environment" {
+  # ...
+
+  # merge() combines tfvars-defined app vars with generated secrets.
+  # Generated secrets override tfvars values if keys collide.
+  app_env_vars = merge(var.app_env_vars, {
+    DB_PASSWORD  = random_password.db.result
+    DATABASE_URL = "postgres://${var.project_name}:${random_password.db.result}@database:5432/${var.project_name}"
+    APP_SECRET   = random_password.app_secret.result
+  })
+}
+```
+
+Each container selects which variables it needs via the `environment:` directive in your `docker-compose.yml`.
 
 ### Docker Images
 

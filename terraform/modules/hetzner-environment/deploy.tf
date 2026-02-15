@@ -21,40 +21,12 @@ resource "null_resource" "deploy_env" {
 }
 
 locals {
-  # Base environment variables common to all projects
+  # Infrastructure-only environment variables (Traefik, ACME, domain).
+  # Application-specific vars (DB, SMTP, secrets, etc.) belong in app_env_vars.
   base_env_vars = {
-    NODE_ENV = "production"
-
-    # Let's Encrypt / ACME
-    ACME_MAIL        = var.acme_mail
-    ACME_STORAGE_DIR = "/mnt/storage/var/docker/letsencrypt"
-
-    # Application
-    APP_DOMAIN = var.domain
-
-    # Database (PostgreSQL)
-    DB_HOST     = "database"
-    DB_PORT     = "5432"
-    DB_NAME     = var.project_name
-    DB_USER     = var.project_name
-    DB_PASSWORD = random_password.db.result
-    DB_VOLUME   = "/mnt/storage/var/docker/postgresql"
-    DATABASE_URL = "postgres://${var.project_name}:${random_password.db.result}@database:5432/${var.project_name}"
-
-    # Email / SMTP
-    MAIL_DEFAULT_FROM           = var.smtp_from
-    MAIL_HOST                   = var.smtp_host
-    MAIL_PORT                   = tostring(var.smtp_port)
-    MAIL_SECURE                 = "false"
-    MAIL_USER                   = var.smtp_user
-    MAIL_PASS                   = var.smtp_password
-    MAIL_TLS_REJECT_UNAUTHORIZED = "true"
-    MAIL_SERVERNAME             = var.smtp_host
-
-    # Application secret (for JWT, sessions, etc.)
-    APP_SECRET = random_password.app_secret.result
-
-    # Traefik
+    APP_DOMAIN              = var.domain
+    ACME_MAIL               = var.acme_mail
+    ACME_STORAGE_DIR        = "/mnt/storage/var/docker/letsencrypt"
     TRAEFIK_DASHBOARD_USERS = replace(var.traefik_dashboard_users, "$", "$$")
   }
 

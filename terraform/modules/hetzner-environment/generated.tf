@@ -5,13 +5,3 @@
 resource "tls_private_key" "default" {
   algorithm = "ED25519"
 }
-
-resource "random_password" "db" {
-  length  = 64
-  special = false
-}
-
-resource "random_password" "app_secret" {
-  length  = 64
-  special = false
-}

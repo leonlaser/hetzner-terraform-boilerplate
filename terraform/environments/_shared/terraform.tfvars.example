@@ -56,12 +56,19 @@ smtp_from = "no-reply@app.example"
 # Application-Specific Environment Variables (optional)
 # =============================================================================
 
-# Add any extra env vars your application needs, beyond the defaults
-# (database, SMTP, domain, Traefik, ACME are already included).
+# The module only sets infrastructure vars (APP_DOMAIN, ACME_MAIL,
+# ACME_STORAGE_DIR, TRAEFIK_DASHBOARD_USERS). Define all application-specific
+# env vars here — they are merged into the .env file deployed to the server.
 #
 # app_env_vars = {
-#   JWT_ACCESS_TOKEN_EXPIRES_IN  = "15m"
-#   JWT_REFRESH_TOKEN_EXPIRES_IN = "7d"
-#   PERSISTENCE                  = "prisma"
-#   SOME_API_KEY                 = "secret-value"
+#   NODE_ENV    = "production"
+#   DB_HOST     = "database"
+#   DB_PORT     = "5432"
+#   DB_NAME     = "myapp"
+#   DB_USER     = "myapp"
+#   DB_VOLUME   = "/mnt/storage/var/docker/postgresql"
+#   SOME_API_KEY = "secret-value"
 # }
+#
+# For generated secrets (passwords, tokens), create random_password resources
+# in your environment's main.tf and merge them — see README.md for an example.
