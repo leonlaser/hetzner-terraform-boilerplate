@@ -13,3 +13,7 @@ populate-env.sh
 # OS
 .DS_Store
 Thumbs.db
+
+# AI
+CLAUDE.md
+.claude

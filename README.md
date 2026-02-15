@@ -1,8 +1,11 @@
 # Hetzner Terraform Template
 
-Terraform template for provisioning a Docker-ready Hetzner Cloud server with multi-environment support (production, staging, demo), automated GitHub Actions CI/CD, and security hardening out of the box.
+A template for Terraform and GitHub Actions CI for provisioning a Docker-ready Hetzner Cloud server with multi-environment support (production,
+staging, demo), with a Docker Compose stack deployed via SSH.
 
-## What You Get
+> This is not a production-ready template. It's meant as a reference and starting point.
+
+## Setup
 
 - **Hetzner Cloud server** (Ubuntu 24.04) with floating IP and block storage volume
 - **Rootless Docker** setup with Docker Compose
@@ -11,7 +14,9 @@ Terraform template for provisioning a Docker-ready Hetzner Cloud server with mul
 - **Traefik-ready** with Let's Encrypt ACME support and dashboard auth
 - **GitHub Actions** CI/CD pipeline with Docker build, push, and SSH-based deployment
 - **GitHub Environments** auto-provisioned with branch protection policies and deployment secrets
-- **Multi-environment**: production (`main`), staging (`develop`), demo (`demo`) branches
+- **Multi-environment**: production (`main`), staging (`develop`), demo (`demo`)
+
+You can customize the terraform `hetzner-environment` module, to create your own custom environment.
 
 ## Prerequisites
 
@@ -19,85 +24,60 @@ Terraform template for provisioning a Docker-ready Hetzner Cloud server with mul
 - A [Hetzner Cloud](https://www.hetzner.com/cloud) project with an API token
 - An S3-compatible backend for Terraform state (e.g. Hetzner Object Storage, MinIO)
 - A [GitHub fine-grained PAT](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) with permissions: administration (r/w), variables (r/w), actions (r), environments (r/w), secrets (r/w)
+- A GitHub Repository
 - SSH key(s) uploaded to your Hetzner project
 - DNS pointing your domain to the server's floating IP (after first apply)
 
-## Quick Start
+## Using the template
 
-### 1. Copy the template
-
-```bash
-# Use this repository as a template, or clone it
-cp -r terraform/ your-project/terraform/
-cp -r .github/ your-project/.github/
-```
-
-### 2. Configure secrets
+### 1. Copy files to your own project
 
 ```bash
-# Copy the example and wire it up to your secrets manager
-cp populate-env.sh.example populate-env.sh
+cp -r terraform/ $YOUR_PROJECT_DIR/terraform/
+cp -r .github/ $YOUR_PROJECT_DIR/.github/
+cp tf.sh $YOUR_PROJECT_DIR/
+cp populate-env.sh.example $YOUR_PROJECT_DIR/populate-env.sh
+cd $YOUR_PROJECT_DIR
 chmod +x populate-env.sh
-$EDITOR populate-env.sh
-```
-
-Replace the empty values with calls to your secrets manager (1Password CLI, Bitwarden CLI, pass, etc.). See the comments in the example file for usage patterns. This file is gitignored.
-
-### 3. Configure your project
-
-```bash
 cd terraform/environments
-
-# Copy the example config
 cp terraform.tfvars.example terraform.tfvars
-
-# Edit with your values
-$EDITOR terraform.tfvars
+cp backend.hcl.example backend.hcl
 ```
 
-Key values to set:
-- `project_name` - short identifier (used for resource names)
-- `github_owner` / `github_repository` - your GitHub repo
-- `domain` - your domain name
-- SMTP host, port, and sender address
+### 2. Configure secrets and variables
 
-### 4. Update S3 backend buckets
+Modify the example files you copied in step 1:
 
-In each environment's `main.tf`, replace the `bucket` name:
+- Modify `populate-env.sh`, so all necessary secrets are available when executing `tf.sh`.
+- Modify `terraform.tfvars` and store configuration here which will be applied to all environments.
+- Optional: Create `<env>/terraform.tfvars` and override values which are specific to that environment.
+
+### 3. Configure S3 backend
+
+Edit `backend.hcl` to match your S3 endpoint and other configuration. Do not store any credentials in this file. Use `populate-env.sh` to populate environment variables with credentials from your secrets manager.
+
+Edit `main.tf` of each environment, and set the bucket name of the S3 bucket you created.
 
 ```hcl
-# terraform/environments/production/main.tf
 backend "s3" {
   bucket = "yourproject-production"  # <-- change this
-  ...
+  #...
 }
 ```
 
-### 5. Configure S3 backend credentials
+### 4. Initialize and apply using `tf.sh`
+
+`tf.sh` allows you to select the environment you want to setup or modify, and will apply global and environment-specific variables.
 
 ```bash
-cd terraform/environments
-
-# Copy the example and fill in your S3 credentials
-cp backend.hcl.example backend.hcl
-$EDITOR backend.hcl
+./tf.sh staging init
+./tf.sh staging plan
+./tf.sh staging apply
 ```
 
-> **Security**: Always use `backend.hcl` or environment variables (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) for backend credentials. Never pass them as CLI arguments — they leak into shell history.
+### 5. Point DNS
 
-### 6. Initialize and apply
-
-```bash
-./tf.sh demo init
-./tf.sh demo plan
-./tf.sh demo apply
-```
-
-`tf.sh` automatically passes `terraform/environments/terraform.tfvars` to all environments. To override values for a specific environment, create `terraform/environments/<env>/terraform.tfvars` — it takes precedence over the global file.
-
-### 7. Point DNS
-
-After `terraform apply`, note the `server_ip` output and create an A record for your domain.
+After `terraform apply`, note the `server_ip` output and create the A record for that domain.
 
 ## Project Structure
 
@@ -139,6 +119,8 @@ terraform/
 
 ## Customization
 
+As this is only a starting point, you should customize it to your own needs and reflect on the security measures you want and need.
+
 ### Application Environment Variables
 
 The module deploys a `.env` file to `/home/deploy/.env` on the server. It contains a small set of infrastructure variables by default:
@@ -163,8 +145,6 @@ app_env_vars = {
 **Generated secrets** (passwords, tokens) should be created at the environment level and merged in the environment's `main.tf`:
 
 ```hcl
-# terraform/environments/production/main.tf
-
 resource "random_password" "db" {
   length  = 64
   special = false
@@ -188,9 +168,21 @@ module "environment" {
 }
 ```
 
-Each container selects which variables it needs via the `environment:` directive in your `docker-compose.yml`.
+### Managing secrets per container
 
-### Docker Images
+For a single-server Docker Compose setup, a `.env` file on disk is a reasonable approach. If someone gains access to your server, they can reach any secret your running processes need — regardless of whether those secrets come from a file, an environment variable, or a mounted volume. The same applies at the container level: a compromised container exposes whatever secrets were passed to it.
+
+The more useful question is not *where* secrets are stored, but *which* secrets each container actually needs. Reducing the blast radius matters more than the storage mechanism:
+
+- **Your frontend container** does not need database credentials or SSH deployment keys.
+- **Your backend container** does not need your hcloud token or GitHub token.
+- **Your database container** does not need SMTP credentials.
+
+Each container in a Docker Compose setup can select which variables it needs via the `environment:` directive. See [`compose.example.yaml`](compose.example.yaml) for an example with Traefik and an application service that selectively passes only the secrets each service requires.
+
+**When to go further:** If you run multiple servers, need audit trails for secret access, or work in a compliance-heavy environment, consider a secrets manager like HashiCorp Vault, AWS Secrets Manager, or Infisical. These give you short-lived credentials, automatic rotation, and access logging — things a static `.env` file cannot provide. For a single-server setup like this template, that complexity is usually not worth the trade-off.
+
+### CI/CD
 
 Edit the `matrix` in `.github/workflows/ci.yml` to match your project's Dockerfiles:
 
@@ -203,17 +195,24 @@ matrix:
       dockerfile: ./apps/backend/Dockerfile
 ```
 
-### Compose Files
-
-Update `.github/workflows/deploy.yml` to copy and use your project's compose files.
-
 ### Build Steps
 
 Replace the `build` job in `.github/workflows/ci.yml` with your project's build/test/lint commands.
 
+### Compose Files
+
+Update `.github/workflows/deploy.yml` to copy and use your project's docker compose files.
+
 ## Security Notes
 
-- **Ephemeral provider tokens**: `hcloud_token` and `github_token` are marked `ephemeral = true` (Terraform >= 1.10). They exist only in memory during a run and are never written to state. Other secrets like SMTP credentials and Traefik dashboard users are *not* ephemeral because they flow into resource attributes (the `.env` file deployed to the server) which Terraform must track in state.
-- **SSH keys in state**: The auto-generated SSH key is stored in Terraform state. This is acceptable for ephemeral demo environments. For production/staging, create and deploy SSH keys manually.
-- **Secrets management**: All secrets are populated via `populate-env.sh` (sourced by `tf.sh`), not stored in files. Copy `populate-env.sh.example` and wire it up to your secrets manager. Both `populate-env.sh` and `terraform.tfvars` are gitignored.
-- The server runs rootless Docker, SSH is hardened (key-only, max 2 retries), fail2ban blocks brute-force attempts, and UFW restricts traffic to ports 22/80/443.
+- **Ephemeral provider tokens**: `hcloud_token` and `github_token` are marked `ephemeral = true`. They exist only in memory during a run and are never written to state. Other secrets like SMTP credentials and Traefik dashboard users are *not* ephemeral because they flow into resource attributes (the `.env` file deployed to the server). Terraform must track their values in state to react to changes.
+- **SSH keys in state**: The auto-generated SSH key is stored in Terraform state. This is acceptable for ephemeral demo environments. For production/staging, create SSH keys manually and update them on your server and in GitHub's environment secrets.
+- **Secrets management**: All secrets are populated via `populate-env.sh` (sourced by `tf.sh`), not stored in files. If you need more additional secrets, extend the variables in the `terraform/environments/_shared/variables.tf` and populate them in `populate-env.sh`.
+- **This is not a production-ready template.** You need to customize it to your own needs to have a secure production environment.
+
+## Ideas on how you can build upon this template for your own use
+
+- Split `server.tf` into `frontend-server.tf`, `backend-server.tf` and `db-server.tf`. Disable the public network for the database server and connect backend and database via the existing private network.
+- Automate creating DNS records for your app, by using the `hcloud_dns_record` resource and add hetzners nameservers to your domain.
+- Use the INWX terraform provider to create DNS records for your app.
+- Add a secret manager like Vault or AWS Secrets Manager to store secrets.
