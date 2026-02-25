@@ -1,11 +1,21 @@
 #cloud-config
 users:
-  # Deployment User
+  # Deployment User (UID 1000 — must be first for rootless Docker)
   - name: deploy
     groups: users
     shell: /bin/bash
     ssh_authorized_keys:
       - ${generated_public_key}
+
+  # Operations User (UID 1001 — backups, monitoring, admin SSH)
+  - name: ops
+    groups: users
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${ops_public_key}
+%{ for key in admin_ssh_public_keys }
+      - ${key}
+%{ endfor }
 
 package_update: true
 package_upgrade: true
@@ -32,23 +42,39 @@ packages:
 %{ endif }
 
 write_files:
+  # SSH Hardening
+  - path: /etc/ssh/sshd_config.d/hardening.conf
+    permissions: '0600'
+    content: |
+      ${indent(6, chomp(sshd_hardening_config))}
+
   # Auto Upgrades
   - path: /etc/apt/apt.conf.d/30auto-upgrades
     permissions: '0644'
     content: |
       ${indent(6, chomp(auto_upgrades_config))}
 
-  # Configure msmtp for sending emails
+  # Configure msmtp for sending emails (no secrets — password read from ops home)
   - path: /etc/msmtprc
-    permissions: '0600'
+    permissions: '0644'
     content: |
       ${indent(6, chomp(msmtp_config))}
 
   # Helper script to check if a reboot is required for updated packages
-  - path: /opt/scripts/check-reboot-required.sh
+  - path: /home/ops/scripts/check-reboot-required.sh
+    owner: ops:ops
     permissions: '0755'
+    defer: true
     content: |
       ${indent(6, chomp(check_reboot_script))}
+
+  # Finish provisioning script (cloud-init clean + reboot)
+  - path: /home/ops/scripts/finish-provisioning.sh
+    owner: ops:ops
+    permissions: '0755'
+    defer: true
+    content: |
+      ${indent(6, chomp(finish_provisioning_script))}
 
   # Systemd sysctl config to allow unprivileged user binding lower ports in rootless Docker
   - path: /etc/sysctl.d/99-docker-rootless.conf
@@ -70,11 +96,13 @@ write_files:
       deploy:100000:65536
     append: true
 
-  # Allow deploy user to trigger backups before deployments
-  - path: /etc/sudoers.d/deploy-backup
+  # Sudoers: deploy can trigger backups as ops, ops can run finish-provisioning as root
+  - path: /etc/sudoers.d/ops
     permissions: '0440'
     content: |
-      deploy ALL=(root) NOPASSWD: /opt/scripts/borg-backup.sh
+      deploy ALL=(ops) NOPASSWD: /home/ops/scripts/borg-backup.sh
+      ops ALL=(root) NOPASSWD: /home/ops/scripts/finish-provisioning.sh
+      ops ALL=(deploy) NOPASSWD: ALL
 
   # Docker Compose file for PostgreSQL
   - path: /home/deploy/docker-compose.yml
@@ -95,32 +123,27 @@ write_files:
       export DOCKER_HOST=unix:///run/user/1000/docker.sock
 
 %{ if backup_enabled }
-  # Backup SSH private key
-  - path: /root/.ssh/backup_key
-    permissions: '0600'
-    content: |
-      ${indent(6, chomp(backup_ssh_private_key))}
-
-  # Backup SSH config
-  - path: /root/.ssh/config
-    permissions: '0600'
-    content: |
-      ${indent(6, chomp(backup_ssh_config))}
-
   # Borg backup script
-  - path: /opt/scripts/borg-backup.sh
-    permissions: '0700'
+  - path: /home/ops/scripts/borg-backup.sh
+    owner: ops:ops
+    permissions: '0755'
+    defer: true
     content: |
       ${indent(6, chomp(borg_backup_script))}
 
   # Borg helper (sets env vars, passes args to borg)
-  - path: /opt/scripts/borg.sh
-    permissions: '0700'
+  - path: /home/ops/scripts/borg.sh
+    owner: ops:ops
+    permissions: '0755'
+    defer: true
     content: |
       ${indent(6, chomp(borg_helper_script))}
 %{ endif }
 
 runcmd:
+  # Apply SSH hardening (PermitRootLogin no, AllowUsers)
+  - systemctl restart ssh
+
   # Setup rootless Docker
   ## Apply subuid and subgid settings
   - sysctl --system
@@ -143,29 +166,16 @@ runcmd:
   # Start PostgreSQL via Docker Compose
   - su - deploy -c "docker compose up -d"
 
-  # Cronjob to check for required reboots and email notification
-  - echo "0 * * * * /opt/scripts/check-reboot-required.sh" | crontab -
+  # Create ops directory structure
+  - mkdir -p /home/ops/.config/borg /home/ops/.ssh /home/ops/logs /home/ops/scripts
+  - chown -R ops:ops /home/ops/.config /home/ops/.ssh /home/ops/logs /home/ops/scripts
+  - chmod 700 /home/ops/.ssh /home/ops/.config/borg
+
+  # Cronjobs (ops user)
+  - su - ops -c 'echo "0 * * * * /home/ops/scripts/check-reboot-required.sh" | crontab -'
 %{ if backup_enabled }
-
-  # Install SSH key on StorageBox (idempotent, uses password)
-  - echo '${backup_ssh_public_key}' | sshpass -p '${storagebox_password}' ssh -p 23 -o StrictHostKeyChecking=accept-new ${storagebox_user}@${storagebox_host} install-ssh-key
-
-  # Create borg repo directory (home dir has .ssh/ so can't be repo root)
-  - ssh -i /root/.ssh/backup_key -o StrictHostKeyChecking=accept-new ${storagebox_user}@${storagebox_host} mkdir db || true
-
-  # Initialize borg repository (ignore "already exists" error)
-  - /opt/scripts/borg.sh init --encryption=repokey --remote-path=borg-1.4 || true
-
-  # Add borg backup to root crontab (alongside reboot check)
-  - |
-    (crontab -l; echo "30 * * * * /opt/scripts/borg-backup.sh") | crontab -
+  - su - ops -c '(crontab -l; echo "30 * * * * /home/ops/scripts/borg-backup.sh") | crontab -'
 %{ endif }
-
-  # Scrub cloud-init user-data (contains sensitive credentials)
-  - rm -f /var/lib/cloud/instance/user-data.txt /var/lib/cloud/instance/user-data.txt.i
-
-  # Initial reboot after package updates
-  - reboot
 
 apt:
   sources:

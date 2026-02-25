@@ -14,7 +14,7 @@ resource "hcloud_server" "app" {
   server_type = var.server_type
   location    = var.location
   image       = "ubuntu-24.04"
-  ssh_keys    = var.root_ssh_key_ids
+  ssh_keys    = var.admin_ssh_key_ids
   labels      = local.app_labels
 
   delete_protection  = var.delete_protection.server

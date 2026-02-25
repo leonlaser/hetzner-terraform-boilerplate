@@ -2,6 +2,10 @@ resource "tls_private_key" "app_deploy_user" {
   algorithm = "ED25519"
 }
 
+resource "tls_private_key" "ops_user" {
+  algorithm = "ED25519"
+}
+
 resource "random_integer" "app_ssh_port" {
   min = 49152
   max = 65535

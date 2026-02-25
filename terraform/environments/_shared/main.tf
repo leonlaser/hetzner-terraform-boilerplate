@@ -67,7 +67,8 @@ module "environment" {
   domain                = var.domain
   github_repository     = var.github_repository
   docker_registry       = var.docker_registry
-  root_ssh_key_ids      = local.root_ssh_key_ids
+  admin_ssh_key_ids     = local.admin_ssh_key_ids
+  admin_ssh_public_keys = local.admin_ssh_public_keys
   location              = var.location
   floating_ip_location  = var.floating_ip_location
   smtp_host             = var.smtp_host

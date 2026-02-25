@@ -1,4 +1,4 @@
-PermitRootLogin prohibit-password
+PermitRootLogin no
 PasswordAuthentication no
 Port ${ssh_port}
 KbdInteractiveAuthentication no
@@ -8,5 +8,5 @@ AllowTcpForwarding no
 X11Forwarding no
 AllowAgentForwarding no
 AuthorizedKeysFile .ssh/authorized_keys
-AllowUsers root deploy
+AllowUsers ops deploy
 PermitUserEnvironment yes

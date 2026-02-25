@@ -41,9 +41,14 @@ variable "docker_registry" {
   description = "Docker registry for pulling container images"
 }
 
-variable "root_ssh_key_ids" {
+variable "admin_ssh_key_ids" {
   type        = list(number)
-  description = "List of Hetzner SSH key IDs to give root access"
+  description = "List of Hetzner SSH key IDs for admin access (attached to servers at creation)"
+}
+
+variable "admin_ssh_public_keys" {
+  type        = list(string)
+  description = "Public key content for admin SSH keys (added to ops user authorized_keys)"
 }
 
 variable "location" {

@@ -199,7 +199,7 @@ backup = {
 }
 ```
 
-You could also override the `root_access_ssh_key_names` to narrow down SSH access to certain users
+You could also override the `admin_ssh_key_names` to narrow down SSH access to certain users
 per environment.
 
 #### Dedicated Database Server (Optional)
@@ -223,7 +223,7 @@ database = {
 ```
 
 When `database` is set, the app server's `DB_HOST` is automatically overridden to `10.0.1.20`. SSH
-to the DB server via the app server as jump host: `ssh -J deploy@<app-ip> deploy@10.0.1.20`.
+to the DB server via the app server as jump host: `ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20`.
 
 DB backup is automatic when both `backup` and `database` are set — the DB server shares the same
 StorageBox subaccount (separate borg repo at `./db`).
@@ -232,7 +232,7 @@ StorageBox subaccount (separate borg repo at `./db`).
 
 ```bash
 # 1. Verify PostgreSQL is running
-ssh -J deploy@<app-ip> deploy@10.0.1.20 "docker compose ps"
+ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20 "sudo -iu deploy docker compose ps"
 
 # 2. Save DB borg passphrase for disaster recovery
 ./tf.sh prod output -raw db_borg_passphrase
@@ -279,7 +279,7 @@ Replace all `[REPLACE_ME]` placeholders in:
   - [ ] Enable the database server in `2_local.auto.tfvars`.
 - Do you know which users need SSH access to the app server?
   - [ ] Add the public keys manually to the Hetzner Cloud project if not existing yet.
-  - [ ] Set `root_access_ssh_key_names` in `2_local.auto.tfvars`.
+  - [ ] Set `admin_ssh_key_names` in `2_local.auto.tfvars`.
 
 ### Deploying a New Environment
 
@@ -298,8 +298,18 @@ Replace all `[REPLACE_ME]` placeholders in:
 
 ## Application Server Structure
 
-- Authorized developers login via their SSH keys as `root`
-- User `deploy` can run Docker and can be accessed by user switching `su deploy`
+Three users with distinct roles:
+
+| User | Purpose | SSH access |
+|------|---------|------------|
+| **ops** | Admin SSH, backups, monitoring | Admin SSH keys (Hetzner project) |
+| **deploy** | Docker, app deployment | Deploy key (CI/CD only) |
+| **root** | System services only | Disabled (`PermitRootLogin no`) |
+
+- Authorized developers login via their SSH keys as `ops`
+- Switch to deploy user via `sudo -iu deploy` (login shell with Docker env)
+- Secrets are **not** in cloud-init — they are pushed via Terraform provisioners after cloud-init completes
+- Backups, monitoring scripts, and crontabs are owned by `ops` under `~/scripts/` and `~/logs/`
 - The Hetzner volume is mounted at `/mnt/storage`
 - Docker Compose configuration and `.env` is deployed to `/mnt/storage/app`
 
@@ -308,21 +318,22 @@ Replace all `[REPLACE_ME]` placeholders in:
 Setting the `backup` variable enables automated Borg backups of `/mnt/storage` (PostgreSQL, Docker
 volumes, certs).
 
-**Retention:** 48 hourly, 7 daily, 4 weekly, 6 monthly, 1 yearly. 
+**Retention:** 48 hourly, 7 daily, 4 weekly, 6 monthly, 1 yearly.
 
-Runs every hour via cron. Emails on failure.
+Runs every hour via the `ops` user's crontab. Emails on failure.
 
-SSH key installation on the StorageBox happens automatically via cloud-init.
+SSH key installation on the StorageBox and borg repository initialization happen automatically via
+Terraform provisioners after cloud-init completes.
 
 **After deploying the server for the first time, verify that backups are working:**
 
 ```bash
-# 1. Login as root
-ssh root@<foobar-ip> -p <foobar-ssh-port>
+# 1. Login as ops
+ssh ops@<foobar-ip> -p <foobar-ssh-port>
 # 2. Execute the backup script
-/opt/scripts/borg-backup.sh
+~/scripts/borg-backup.sh
 # 3. Verify the logs show no errors
-cat /var/log/borg-backup.log
+cat ~/logs/borg-backup.log
 
 # The output should look similar to this:
 # === Backup started: Mon Feb 23 03:30:01 PM UTC 2026 ===
@@ -337,26 +348,29 @@ Each environment gets its own StorageBox **subaccount** (created automatically),
 
 ### Borg Helper Script
 
-Every server with backups enabled gets `/opt/scripts/borg.sh` — a wrapper that sets `BORG_REPO`,
-`BORG_PASSPHRASE`, and `BORG_RSH`, then passes all arguments to `borg`. This avoids having to export
-environment variables manually when interacting with borg:
+Every server with backups enabled gets `~/scripts/borg.sh` (owned by `ops`) — a wrapper that sets
+`BORG_REPO`, `BORG_PASSPHRASE`, and `BORG_RSH`, then passes all arguments to `borg`. This avoids
+having to export environment variables manually when interacting with borg:
 
 ```bash
+# Login as ops
+ssh ops@<foobar-ip> -p <foobar-ssh-port>
+
 # List all archives
-sudo /opt/scripts/borg.sh list
+~/scripts/borg.sh list
 
 # Show details of a specific archive
-sudo /opt/scripts/borg.sh info ::archive-name
+~/scripts/borg.sh info ::archive-name
 
 # Extract a file from an archive
-sudo /opt/scripts/borg.sh extract ::archive-name path/to/file
+~/scripts/borg.sh extract ::archive-name path/to/file
 
 # Any borg command works
-sudo /opt/scripts/borg.sh <command> [args...]
+~/scripts/borg.sh <command> [args...]
 ```
 
-The automated backup script (`borg-backup.sh`) and the cloud-init `borg init` both use this helper
-internally.
+The automated backup script (`borg-backup.sh`) and the provisioner's `borg init` both use this
+helper internally.
 
 ### Restoring from a Backup
 
@@ -364,27 +378,27 @@ Backups only cover `/mnt/storage` (application data, compose files, database vol
 live on the server's local disk and are not affected by a restore — no need to re-pull them.
 
 ```bash
-# 1. SSH into the server as root
-ssh root@<foobar-ip> -p <foobar-ssh-port>
+# 1. SSH into the server as ops
+ssh ops@<foobar-ip> -p <foobar-ssh-port>
 
 # 2. List available archives to find the one you want
-/opt/scripts/borg.sh list
+~/scripts/borg.sh list
 
 # 3. Optional: Inspect an archive to see what it contains
-/opt/scripts/borg.sh list ::<archive-name>
+~/scripts/borg.sh list ::<archive-name>
 
 # 4. Stop the running application
-su - deploy -c "cd /mnt/storage/app && docker compose down"
+sudo -iu deploy bash -c "cd /mnt/storage/app && docker compose down"
 
 # 5. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
-/opt/scripts/borg-backup.sh
+~/scripts/borg-backup.sh
 
 # 6. Restore — extract the archive over the existing data
 cd / # <- THIS IS IMPORTANT! Because the path in the backup archive is absolute
-/opt/scripts/borg.sh extract ::<archive-name>
+~/scripts/borg.sh extract ::<archive-name>
 
 # 7. Start the application again
-su - deploy -c "cd /mnt/storage/app && docker compose up -d"
+sudo -iu deploy bash -c "cd /mnt/storage/app && docker compose up -d"
 ```
 
 > **Note:** After server recreation (new server = empty disk), trigger a re-deployment from CI to
@@ -394,25 +408,25 @@ To restore only specific files or directories (e.g., just the database volume):
 
 ```bash
 cd /
-/opt/scripts/borg.sh extract ::<archive-name> mnt/HC_Volume_<id>/db
+~/scripts/borg.sh extract ::<archive-name> mnt/HC_Volume_<id>/db
 ```
 
 Note: Paths inside borg archives are relative (no leading `/`). Since the backup resolves the
 `/mnt/storage` symlink, paths use the actual volume mount `mnt/HC_Volume_<id>/`. Use
-`/opt/scripts/borg.sh list ::<archive-name>` to see the exact paths.
+`~/scripts/borg.sh list ::<archive-name>` to see the exact paths.
 
 **If the database server is separate**, restore it the same way via the app server as jump host:
 
 ```bash
 # Connect directly to the database server
-ssh -J deploy@<app-ip> root@10.0.1.20
+ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20
 
 # On the database server:
-su - deploy -c "docker compose down"
-/opt/scripts/borg-backup.sh
+sudo -iu deploy bash -c "docker compose down"
+~/scripts/borg-backup.sh
 cd /
-/opt/scripts/borg.sh extract ::<archive-name>
-su - deploy -c "docker compose up -d"
+~/scripts/borg.sh extract ::<archive-name>
+sudo -iu deploy bash -c "docker compose up -d"
 ```
 
 ## Server Replacement Safety

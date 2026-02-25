@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-export BORG_REPO="ssh://${storagebox_user}@${storagebox_host}:23/${storagebox_path}"
-export BORG_PASSPHRASE="${borg_passphrase}"
-export BORG_RSH="ssh -i /root/.ssh/backup_key -o StrictHostKeyChecking=accept-new"
+set -a
+source "$HOME/.config/borg/env"
+set +a
 
 exec borg "$@"

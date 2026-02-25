@@ -18,7 +18,7 @@ resource "hcloud_server" "database" {
   server_type = var.database.server_type
   location    = var.location
   image       = "ubuntu-24.04"
-  ssh_keys    = var.root_ssh_key_ids
+  ssh_keys    = var.admin_ssh_key_ids
   labels      = local.database_labels
 
   delete_protection  = var.delete_protection.server

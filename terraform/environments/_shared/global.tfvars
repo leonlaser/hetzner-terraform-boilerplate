@@ -9,7 +9,7 @@ project_name = "[REPLACE_ME]"
 # =============================================================================
 
 # Names of SSH keys already uploaded to your Hetzner project
-root_access_ssh_key_names = ["[REPLACE_ME]"]
+admin_ssh_key_names = ["[REPLACE_ME]"]
 
 # Hetzner datacenter location (default: nbg1)
 # Options: fsn1 (Falkenstein), nbg1 (Nuremberg), hel1 (Helsinki), ash (Ashburn)

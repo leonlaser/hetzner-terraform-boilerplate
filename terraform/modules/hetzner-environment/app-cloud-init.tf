@@ -1,8 +1,11 @@
 locals {
   cloud_init = templatefile("${path.module}/templates/cloud-init.yml.tftpl", {
-    generated_public_key = tls_private_key.app_deploy_user.public_key_openssh
-    volume_id            = hcloud_volume.app.id
-    ssh_port             = random_integer.app_ssh_port.result
+    generated_public_key  = tls_private_key.app_deploy_user.public_key_openssh
+    ops_public_key        = tls_private_key.ops_user.public_key_openssh
+    admin_ssh_public_keys = var.admin_ssh_public_keys
+    volume_id             = hcloud_volume.app.id
+    ssh_port              = random_integer.app_ssh_port.result
+    has_database          = var.database != null
 
     netplan_config = templatefile("${path.module}/templates/files/60-floating-ip.yaml.tftpl", {
       floating_ip    = hcloud_floating_ip.master.ip_address
@@ -23,7 +26,6 @@ locals {
       smtp_port             = var.smtp_port
       server_info_mail_from = var.server_info_mail_from
       smtp_user             = var.smtp_user
-      smtp_password         = var.smtp_password
     })
 
     check_reboot_script = templatefile("${path.module}/templates/files/check-reboot-required.sh.tftpl", {
@@ -36,32 +38,16 @@ locals {
       notify_email = var.server_info_mail_to
     }) : ""
 
-    borg_helper_script = var.backup != null ? templatefile("${path.module}/templates/files/borg.sh.tftpl", {
-      storagebox_host = hcloud_storage_box_subaccount.backup[0].server
-      storagebox_user = hcloud_storage_box_subaccount.backup[0].username
-      storagebox_path = "./app"
-      borg_passphrase = random_password.app_borg_passphrase[0].result
-    }) : ""
-
-    backup_ssh_config = var.backup != null ? templatefile("${path.module}/templates/files/backup-ssh-config.tftpl", {
-      storagebox_host = hcloud_storage_box_subaccount.backup[0].server
-    }) : ""
-
-    backup_ssh_private_key = var.backup != null ? tls_private_key.app_backup[0].private_key_openssh : ""
-    borg_passphrase        = var.backup != null ? random_password.app_borg_passphrase[0].result : ""
-    storagebox_host        = var.backup != null ? hcloud_storage_box_subaccount.backup[0].server : ""
-    storagebox_user        = var.backup != null ? hcloud_storage_box_subaccount.backup[0].username : ""
-    storagebox_path        = "./app"
-    storagebox_password    = var.backup != null ? hcloud_storage_box_subaccount.backup[0].password : ""
-    backup_ssh_public_key  = var.backup != null ? chomp(tls_private_key.app_backup[0].public_key_openssh) : ""
+    borg_helper_script = var.backup != null ? file("${path.module}/templates/files/borg.sh.tftpl") : ""
 
     pre_deploy_backup_script = var.backup != null ? templatefile("${path.module}/templates/files/pre-deploy-backup.sh.tftpl", {
       database_ip = var.database != null ? local.internal_ips.database : ""
     }) : ""
 
-    swap_size = var.swap_size
+    finish_provisioning_script = templatefile("${path.module}/templates/files/finish-provisioning.sh.tftpl", {
+      database_ip = var.database != null ? local.internal_ips.database : ""
+    })
 
-    deploy_private_key = tls_private_key.app_deploy_user.private_key_openssh
-    database_ip        = var.database != null ? local.internal_ips.database : ""
+    swap_size = var.swap_size
   })
 }

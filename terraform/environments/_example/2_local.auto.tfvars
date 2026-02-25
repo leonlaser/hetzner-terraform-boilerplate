@@ -1,4 +1,4 @@
-domain           = "[REPLACE_ME].example.com"
+domain           = "[REPLACE_ME]"
 environment_name = "[REPLACE_ME]"
 deploy_branch    = "[REPLACE_ME]"
 

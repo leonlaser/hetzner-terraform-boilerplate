@@ -39,7 +39,7 @@ variable "docker_registry" {
   default = "ghcr.io"
 }
 
-variable "root_access_ssh_key_names" {
+variable "admin_ssh_key_names" {
   type = list(string)
 }
 
