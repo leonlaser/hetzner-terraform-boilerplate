@@ -3,18 +3,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENVIRONMENTS_DIR="$SCRIPT_DIR/terraform/environments"
-VALID_ENVS=("demo" "staging" "production")
 
-# Load secrets
-POPULATE_ENV="$SCRIPT_DIR/populate-env.sh"
-if [[ -f "$POPULATE_ENV" ]]; then
-  # shellcheck source=/dev/null
-  source "$POPULATE_ENV"
-else
-  echo "Error: $POPULATE_ENV not found." >&2
-  echo "Run: cp populate-env.sh.example populate-env.sh" >&2
-  exit 1
-fi
+# Auto-discover environments: directories not starting with "_"
+VALID_ENVS=()
+for dir in "$ENVIRONMENTS_DIR"/*/; do
+  name="$(basename "$dir")"
+  if [[ "$name" != _* ]]; then
+    VALID_ENVS+=("$name")
+  fi
+done
 
 usage() {
   echo "Usage: $0 <environment> <terraform-command> [args...]"
@@ -22,10 +19,10 @@ usage() {
   echo "Environments: ${VALID_ENVS[*]}"
   echo ""
   echo "Examples:"
-  echo "  $0 production init"
-  echo "  $0 staging plan"
-  echo "  $0 demo apply"
-  echo "  $0 production plan -target=module.environment.hcloud_server.default"
+  echo "  $0 <environment> init"
+  echo "  $0 <environment> plan"
+  echo "  $0 <environment> apply"
+  echo "  $0 <environment> force-unlock 1234565790"
   exit 1
 }
 
@@ -35,6 +32,7 @@ fi
 
 ENV="$1"
 shift
+WORK_DIR="$ENVIRONMENTS_DIR/$ENV"
 
 # Validate environment
 valid=false
@@ -50,22 +48,30 @@ if [[ "$valid" == false ]]; then
   exit 1
 fi
 
-WORK_DIR="$ENVIRONMENTS_DIR/$ENV"
+# Load secrets (global, then optional per-environment overrides)
+ENV_FILE="$SCRIPT_DIR/env.sh"
+if [[ -f "$ENV_FILE" ]]; then
+  source "$ENV_FILE"
+else
+  echo "Error: $ENV_FILE not found." >&2
+  echo "Run: cp env.sh.example env.sh" >&2
+  exit 1
+fi
 
-# Auto-append -backend-config for init
+load_env_overrides() {
+  local env_file="$ENVIRONMENTS_DIR/$1/env.sh"
+  if [[ -f "$env_file" ]]; then
+    source "$env_file"
+  fi
+}
+load_env_overrides "$ENV"
+
+COMMAND="$1"
+shift
+
 EXTRA_ARGS=()
-if [[ "$1" == "init" && -f "$ENVIRONMENTS_DIR/backend.hcl" ]]; then
-  EXTRA_ARGS+=("-backend-config=$ENVIRONMENTS_DIR/backend.hcl")
+if [[ "$COMMAND" == "init" ]]; then
+  EXTRA_ARGS+=("-backend-config=backend.hcl")
 fi
 
-# Global tfvars (applied to all environments)
-if [[ -f "$ENVIRONMENTS_DIR/terraform.tfvars" ]]; then
-  EXTRA_ARGS+=("-var-file=$ENVIRONMENTS_DIR/terraform.tfvars")
-fi
-
-# Environment-specific tfvars (overrides global values)
-if [[ -f "$WORK_DIR/terraform.tfvars" ]]; then
-  EXTRA_ARGS+=("-var-file=$WORK_DIR/terraform.tfvars")
-fi
-
-terraform -chdir="$WORK_DIR" "$@" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+tofu -chdir="$WORK_DIR" "$COMMAND" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} "$@"

@@ -1,218 +1,446 @@
-# Hetzner Terraform Template
+# Hetzner Infrastructure
 
-A template for Terraform and GitHub Actions CI for provisioning a Docker-ready Hetzner Cloud server with multi-environment support (production,
-staging, demo), with a Docker Compose stack deployed via SSH.
+Multi-environment OpenTofu setup deploying single-server instances on Hetzner Cloud. Each environment gets its own server(s), floating IP, persistent volume, and GitHub deployment environment.
 
-> This is not a production-ready template. It's meant as a reference and starting point.
+## Table of Contents
 
-## Setup
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [tf.sh](#tfsh)
+- [Adding New Environment Variables to existing Environments](#adding-new-environment-variables-to-existing-environments)
+  - [Static Environment Variables](#static-environment-variables)
+  - [External Secrets as Environment Variables](#external-secrets-as-environment-variables)
+- [Accessing Generated Credentials and Values](#accessing-generated-credentials-and-values)
+- [Providing Secrets](#providing-secrets)
+  - [Shared Secrets for all environments](#shared-secrets-for-all-environments)
+  - [Secrets Per-Environment](#secrets-per-environment)
+- [Configuration](#configuration)
+  - [Shared Configuration](#shared-configuration)
+  - [Configuration Per-Environment](#configuration-per-environment)
+    - [Dedicated Database Server (Optional)](#dedicated-database-server-optional)
+    - [Delete Protection](#delete-protection)
+- [Creating a New Environment](#creating-a-new-environment)
+  - [Create the Environment Directory](#create-the-environment-directory)
+  - [Setup Checklist](#setup-checklist)
+  - [Deploying a New Environment](#deploying-a-new-environment)
+- [Application Server Structure](#application-server-structure)
+- [Backups (Borg + Hetzner StorageBox)](#backups-borg--hetzner-storagebox)
+  - [Borg Helper Script](#borg-helper-script)
+  - [Restoring from a Backup](#restoring-from-a-backup)
+- [Server Replacement Safety](#server-replacement-safety)
+- [Directory Structure](#directory-structure)
 
-- **Hetzner Cloud server** (Ubuntu 24.04) with floating IP and block storage volume
-- **Rootless Docker** setup with Docker Compose
-- **Security hardening**: SSH hardening, fail2ban, UFW firewall, unattended security upgrades
-- **SMTP notifications** for reboot-required alerts and unattended-upgrades reports
-- **Traefik-ready** with Let's Encrypt ACME support and dashboard auth
-- **GitHub Actions** CI/CD pipeline with Docker build, push, and SSH-based deployment
-- **GitHub Environments** auto-provisioned with branch protection policies and deployment secrets
-- **Multi-environment**: production (`main`), staging (`develop`), demo (`demo`)
-
-You can customize the terraform `hetzner-environment` module, to create your own custom environment.
+```
+├── tf.sh                    # CLI wrapper
+├── env.sh                   # Global secrets (gitignored)
+└── terraform/
+    ├── environments/
+    │   ├── _shared/         # Symlinked into each environment
+    │   ├── _example/        # Template for new environments
+    │   ├── foobar/          # An active environment
+    │   └── foobar/env.sh    # Environment specific secrets (gitignored)
+    └── modules/
+        └── hetzner-environment/  # Reusable environment module
+```
 
 ## Prerequisites
 
-- [Terraform](https://www.terraform.io/downloads) >= 1.10 (required for ephemeral variables)
-- A [Hetzner Cloud](https://www.hetzner.com/cloud) project with an API token
-- An S3-compatible backend for Terraform state (e.g. Hetzner Object Storage, MinIO)
-- A [GitHub fine-grained PAT](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) with permissions: administration (r/w), variables (r/w), actions (r), environments (r/w), secrets (r/w)
-- A GitHub Repository
-- SSH key(s) uploaded to your Hetzner project
-- DNS pointing your domain to the server's floating IP (after first apply)
+- [OpenTofu](https://opentofu.org/) >= 1.10
+- A secrets manager with CLI support
 
-## Using the template
-
-### 1. Copy files to your own project
+## Quick Start
 
 ```bash
-cp -r terraform/ $YOUR_PROJECT_DIR/terraform/
-cp -r .github/ $YOUR_PROJECT_DIR/.github/
-cp tf.sh $YOUR_PROJECT_DIR/
-cp populate-env.sh.example $YOUR_PROJECT_DIR/populate-env.sh
-cd $YOUR_PROJECT_DIR
-chmod +x populate-env.sh
-cd terraform/environments
-cp terraform.tfvars.example terraform.tfvars
-cp backend.hcl.example backend.hcl
+# 1. Set up global secrets
+cp env.sh.example env.sh
+# Edit env.sh — wire up your secrets manager
+
+# 2. Setup environment specific secrets
+cp terraform/environments/foobar/env.sh.example terraform/environments/foobar/env.sh
+# Edit environments/foobar/env.sh — wire up your secrets manager
+
+# 3. Initialize the environment
+./tf.sh foobar init
+
+# You are done and can use the environment now:
+./tf.sh foobar plan
+./tf.sh foobar apply
 ```
 
-### 2. Configure secrets and variables
+## tf.sh
 
-Modify the example files you copied in step 1:
-
-- Modify `populate-env.sh`, so all necessary secrets are available when executing `tf.sh`.
-- Modify `terraform.tfvars` and store configuration here which will be applied to all environments.
-- Optional: Create `<env>/terraform.tfvars` and override values which are specific to that environment.
-
-### 3. Configure S3 backend
-
-Edit `backend.hcl` to match your S3 endpoint and other configuration. Do not store any credentials in this file. Use `populate-env.sh` to populate environment variables with credentials from your secrets manager.
-
-Edit `main.tf` of each environment, and set the bucket name of the S3 bucket you created.
-
-```hcl
-backend "s3" {
-  bucket = "yourproject-production"  # <-- change this
-  #...
-}
-```
-
-### 4. Initialize and apply using `tf.sh`
-
-`tf.sh` allows you to select the environment you want to setup or modify, and will apply global and environment-specific variables.
+Wrapper around `tofu` that loads secrets and runs commands for a selected environment:
 
 ```bash
-./tf.sh staging init
-./tf.sh staging plan
-./tf.sh staging apply
+./tf.sh <environment> <command> [args...]
+./tf.sh foobar plan
+./tf.sh foobar apply -auto-approve
+./tf.sh foobar output server_ip
 ```
 
-### 5. Point DNS
+It sources secrets in order: `env.sh` (global) then `terraform/environments/<env>/env.sh`
+(overrides).
 
-After `terraform apply`, note the `server_ip` output and create the A record for that domain.
+## Adding New Environment Variables to existing Environments
 
-## Project Structure
+### Static Environment Variables
 
-```
-tf.sh                         # Terraform wrapper (sources secrets, selects env)
-populate-env.sh.example       # Template for secrets population script
+New static values, like port numbers and token TTLs can be added either in
+`terraform/environments/_shared/global.tfvars` in `base_env_vars` for all environments or in
+`terraform/environments/<env>/2_local.auto.tfvars` in `app_env_vars` for a specific environment.
 
-terraform/
-├── environments/
-│   ├── backend.hcl.example      # S3 backend credentials template
-│   ├── terraform.tfvars.example # Global environment variables template
-│   ├── _shared/                 # Shared variable definitions
-│   │   ├── variables.tf
-│   │   ├── ssh_keys.tf
-│   ├── demo/
-│   │   └── main.tf              # Demo: deploys from 'demo' branch
-│   ├── staging/
-│   │   └── main.tf              # Staging: deploys from 'develop' branch
-│   └── production/
-│       └── main.tf              # Production: deploys from 'main' branch
-└── modules/
-    └── hetzner-environment/  # Reusable infrastructure module
-        ├── main.tf           # Provider requirements
-        ├── variables.tf      # Module inputs
-        ├── outputs.tf        # Module outputs
-        ├── server.tf         # Server, floating IP, volume
-        ├── network.tf        # VPC, subnet, firewall
-        ├── github.tf         # GitHub environment & secrets
-        ├── deploy.tf         # .env file provisioning
-        ├── generated.tf      # Auto-generated SSH keys
-        └── templates/
-            ├── cloud-init.yml.tftpl  # Server bootstrap
-            └── env.tftpl             # .env file template
+### External Secrets as Environment Variables
 
-.github/workflows/
-├── ci.yml      # Build, test, Docker push, deploy trigger
-└── deploy.yml  # SSH-based deployment via Docker Compose
+If you need to pass API keys, login credentials or other secrets to your application, they need to
+be provided through `env.sh`. For global secrets, use the root `env.sh`, for environment-specific
+secrets, use the environment-specific `terraform/environments/<env>/env.sh`.
+
+- Define a new `TF_VAR_<name>` in `env.sh.example` and in your local `env.sh`
+- Define a new variable in `terraform/environments/_shared/variables.tf`
+- Define a new Environment Variable in either `terraform/environments/_shared/global.tfvars` in
+  `base_env_vars` for all environments or in `terraform/environments/<env>/2_local.auto.tfvars` in
+  `app_env_vars` for a specific environment.
+
+After `./tf.sh apply <env>`, the variable will be available after your next deployment via GitHub.
+
+## Accessing Generated Credentials and Values
+
+Avoid showing secrets in your terminal. Users of macOS can use `pbcopy` to copy the output to the
+clipboard. Users of linux can use `xclip --clipboard --input` or `xsel -selection clipboard`
+instead:
+
+```bash
+./tf.sh foobar output borg_passphrase | pbcopy
+./tf.sh foobar output borg_passphrase | xclip --clipboard --input
+./tf.sh foobar output borg_passphrase | xsel -selection clipboard
 ```
 
-## Customization
+Traefik dashboard credentials are auto-generated per environment (username: `admin`):
 
-As this is only a starting point, you should customize it to your own needs and reflect on the security measures you want and need.
+```bash
+./tf.sh foobar output traefik_dashboard_password
+```
 
-### Application Environment Variables
+Dynamic SSH Port:
 
-The module deploys a `.env` file to `/home/deploy/.env` on the server. It contains a small set of infrastructure variables by default:
+```bash
+./tf.sh foobar output ssh_port
+```
 
-- `APP_DOMAIN`, `ACME_MAIL`, `ACME_STORAGE_DIR` — domain and Let's Encrypt config
-- `TRAEFIK_DASHBOARD_USERS` — Traefik basic auth
+IP addresses:
 
-All application-specific variables (database, SMTP, secrets, etc.) are defined via the `app_env_vars` map. Values in `app_env_vars` are merged with the base infra vars and can override them.
+```bash
+./tf.sh foobar output server_ip
+./tf.sh foobar output server_ip_v6
+```
 
-**Static vars** go in `terraform.tfvars`:
+Borg backup passphrase:
+
+```bash
+./tf.sh foobar output borg_passphrase
+```
+
+Borg database backup passphrase, if enabled:
+
+```bash
+./tf.sh foobar output db_borg_passphrase
+```
+
+## Providing Secrets
+
+### Shared Secrets for all environments
+
+The root `env.sh` contains shared secrets across all environments. Must export:
+
+| Variable                                      | Description                                                |
+| --------------------------------------------- | ---------------------------------------------------------- |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | S3 backend credentials (Hetzner Object Storage)            |
+| `TF_VAR_hcloud_token`                         | Hetzner Cloud API token for the used Hetzner Cloud project |
+| `TF_VAR_github_token`                         | GitHub fine-grained PAT (see `env.sh.example`)             |
+| `TF_VAR_smtp_user` / `TF_VAR_smtp_password`   | SMTP credentials                                           |
+
+### Secrets Per-Environment
+
+Each environment **must** override at minimum in `terraform/environments/<env-name>/env.sh`:
+
+| Variable                             | Description                        |
+| ------------------------------------ | ---------------------------------- |
+| `STATE_PASSPHRASE` + `TF_ENCRYPTION` | Unique state encryption passphrase |
+
+See `terraform/environments/_example/env.sh.example` for the template. If the environment has its
+own Hetzner Cloud project or SMTP server, you can also override these at this level.
+
+## Configuration
+
+### Shared Configuration
+
+Project-wide defaults are stored in `terraform/environments/_shared/global.tfvars`. For example,
+server type, volume size, SSH keys, SMTP config, base app env vars. Symlinked as
+`1_global.auto.tfvars` into each environment.
+
+### Configuration Per-Environment
+
+Environment-specific overrides are stored in
+`terraform/environments/<env-name>/2_local.auto.tfvars`:
 
 ```hcl
+domain           = "foobar.example.com"
+environment_name = "foobar"
+deploy_branch    = "foobar"
+
 app_env_vars = {
-  NODE_ENV = "production"
-  DB_HOST  = "database"
-  DB_PORT  = "5432"
-  DB_NAME  = "myapp"
-  DB_USER  = "myapp"
+  MAIL_FROM   = "info@foobar.example.com"
+  ADMIN_EMAIL = "sysadmin@example.com"
+}
+
+# Optional: Borg backups to Hetzner StorageBox
+backup = {
+  storage_box_id = 123456  # Hetzner Storage Box ID — subaccount is created automatically
 }
 ```
 
-**Generated secrets** (passwords, tokens) should be created at the environment level and merged in the environment's `main.tf`:
+You could also override the `root_access_ssh_key_names` to narrow down SSH access to certain users
+per environment.
+
+#### Dedicated Database Server (Optional)
+
+By default, PostgreSQL runs as a Docker service on the app server. For production environments, you
+can optionally run PostgreSQL on a dedicated server that is only accessible via the internal
+network.
+
+Benefits:
+
+- Database server can scale independently of the app server
+- Database isolated from public-facing app server (reduced blast radius)
+- Automatic backup when `backup` is set (shared StorageBox subaccount, separate borg repo)
+- DB server has no public IP — only reachable via internal network (`10.0.1.20`)
 
 ```hcl
-resource "random_password" "db" {
-  length  = 64
-  special = false
-}
-
-resource "random_password" "app_secret" {
-  length  = 64
-  special = false
-}
-
-module "environment" {
-  # ...
-
-  # merge() combines tfvars-defined app vars with generated secrets.
-  # Generated secrets override tfvars values if keys collide.
-  app_env_vars = merge(var.app_env_vars, {
-    DB_PASSWORD  = random_password.db.result
-    DATABASE_URL = "postgres://${var.project_name}:${random_password.db.result}@database:5432/${var.project_name}"
-    APP_SECRET   = random_password.app_secret.result
-  })
+database = {
+  server_type = "cx32"
+  volume_size = 20
 }
 ```
 
-### Managing secrets per container
+When `database` is set, the app server's `DB_HOST` is automatically overridden to `10.0.1.20`. SSH
+to the DB server via the app server as jump host: `ssh -J deploy@<app-ip> deploy@10.0.1.20`.
 
-For a single-server Docker Compose setup, a `.env` file on disk is a reasonable approach. If someone gains access to your server, they can reach any secret your running processes need — regardless of whether those secrets come from a file, an environment variable, or a mounted volume. The same applies at the container level: a compromised container exposes whatever secrets were passed to it.
+DB backup is automatic when both `backup` and `database` are set — the DB server shares the same
+StorageBox subaccount (separate borg repo at `./db`).
 
-The more useful question is not *where* secrets are stored, but *which* secrets each container actually needs. Reducing the blast radius matters more than the storage mechanism:
+**Post-apply steps (when database is enabled):**
 
-- **Your frontend container** does not need database credentials or SSH deployment keys.
-- **Your backend container** does not need your hcloud token or GitHub token.
-- **Your database container** does not need SMTP credentials.
+```bash
+# 1. Verify PostgreSQL is running
+ssh -J deploy@<app-ip> deploy@10.0.1.20 "docker compose ps"
 
-Each container in a Docker Compose setup can select which variables it needs via the `environment:` directive. See [`compose.example.yaml`](compose.example.yaml) for an example with Traefik and an application service that selectively passes only the secrets each service requires.
-
-**When to go further:** If you run multiple servers, need audit trails for secret access, or work in a compliance-heavy environment, consider a secrets manager like HashiCorp Vault, AWS Secrets Manager, or Infisical. These give you short-lived credentials, automatic rotation, and access logging — things a static `.env` file cannot provide. For a single-server setup like this template, that complexity is usually not worth the trade-off.
-
-### CI/CD
-
-Edit the `matrix` in `.github/workflows/ci.yml` to match your project's Dockerfiles:
-
-```yaml
-matrix:
-  include:
-    - image: frontend
-      dockerfile: ./apps/frontend/Dockerfile
-    - image: backend
-      dockerfile: ./apps/backend/Dockerfile
+# 2. Save DB borg passphrase for disaster recovery
+./tf.sh prod output -raw db_borg_passphrase
 ```
 
-### Build Steps
+#### Delete Protection
 
-Replace the `build` job in `.github/workflows/ci.yml` with your project's build/test/lint commands.
+Each environment controls whether critical resources can be destroyed via `delete_protection`. This
+sets both Hetzner's API-level `delete_protection` and OpenTofu's `prevent_destroy` lifecycle rule.
 
-### Compose Files
+```hcl
+delete_protection = {
+  server      = true   # app server (also enables rebuild_protection)
+  volume      = true   # persistent storage volume
+  floating_ip = true   # IPv4 and IPv6 floating IPs
+}
+```
 
-Update `.github/workflows/deploy.yml` to copy and use your project's docker compose files.
+The variable has no default — every environment must explicitly set it. For production, enable all
+protections. For staging/dev, keep them `false` so you can freely recreate resources.
 
-## Security Notes
+## Creating a New Environment
 
-- **Ephemeral provider tokens**: `hcloud_token` and `github_token` are marked `ephemeral = true`. They exist only in memory during a run and are never written to state. Other secrets like SMTP credentials and Traefik dashboard users are *not* ephemeral because they flow into resource attributes (the `.env` file deployed to the server). Terraform must track their values in state to react to changes.
-- **SSH keys in state**: The auto-generated SSH key is stored in Terraform state. This is acceptable for ephemeral demo environments. For production/staging, create SSH keys manually and update them on your server and in GitHub's environment secrets.
-- **Secrets management**: All secrets are populated via `populate-env.sh` (sourced by `tf.sh`), not stored in files. If you need more additional secrets, extend the variables in the `terraform/environments/_shared/variables.tf` and populate them in `populate-env.sh`.
-- **This is not a production-ready template.** You need to customize it to your own needs to have a secure production environment.
+### Create the Environment Directory
 
-## Ideas on how you can build upon this template for your own use
+```bash
+cd terraform/environments
+cp -a _example <name>
+```
 
-- Split `server.tf` into `frontend-server.tf`, `backend-server.tf` and `db-server.tf`. Disable the public network for the database server and connect backend and database via the existing private network.
-- Automate creating DNS records for your app, by using the `hcloud_dns_record` resource and add hetzners nameservers to your domain.
-- Use the INWX terraform provider to create DNS records for your app.
-- Add a secret manager like Vault or AWS Secrets Manager to store secrets.
+Replace all `[REPLACE_ME]` placeholders in:
+
+- [ ] backend.hcl (state storage endpoint, bucket, key)
+- [ ] 2_local.auto.tfvars (domain, environment name, deploy branch, etc.)
+- [ ] env.sh.example (rename to env.sh, fill in state passphrase)
+- [ ] if necessary, customize the environment further
+
+### Setup Checklist
+
+- Do you need backups?
+  - [ ] Have a StorageBox setup and ready in the same Hetzner Cloud project.
+  - [ ] Enable backups in `2_local.auto.tfvars`.
+- Do you need a dedicated database server, or is it okay to run the database on the app server?
+  - [ ] Enable the database server in `2_local.auto.tfvars`.
+- Do you know which users need SSH access to the app server?
+  - [ ] Add the public keys manually to the Hetzner Cloud project if not existing yet.
+  - [ ] Set `root_access_ssh_key_names` in `2_local.auto.tfvars`.
+
+### Deploying a New Environment
+
+```bash
+# 1. Init, check and apply
+./tf.sh foobar init
+./tf.sh foobar plan
+./tf.sh foobar apply
+
+# 2. Create DNS records pointing to the floating IPs
+./tf.sh foobar output server_ip      # → A record
+./tf.sh foobar output server_ip_v6   # → AAAA record (use the ::1 address from the /64 block)
+
+# IMPORTANT: Wait until DNS propagates before deploying your application, as Traefik needs to pull TLS certs.
+```
+
+## Application Server Structure
+
+- Authorized developers login via their SSH keys as `root`
+- User `deploy` can run Docker and can be accessed by user switching `su deploy`
+- The Hetzner volume is mounted at `/mnt/storage`
+- Docker Compose configuration and `.env` is deployed to `/mnt/storage/app`
+
+## Backups (Borg + Hetzner StorageBox)
+
+Setting the `backup` variable enables automated Borg backups of `/mnt/storage` (PostgreSQL, Docker
+volumes, certs).
+
+**Retention:** 48 hourly, 7 daily, 4 weekly, 6 monthly, 1 yearly. 
+
+Runs every hour via cron. Emails on failure.
+
+SSH key installation on the StorageBox happens automatically via cloud-init.
+
+**After deploying the server for the first time, verify that backups are working:**
+
+```bash
+# 1. Login as root
+ssh root@<foobar-ip> -p <foobar-ssh-port>
+# 2. Execute the backup script
+/opt/scripts/borg-backup.sh
+# 3. Verify the logs show no errors
+cat /var/log/borg-backup.log
+
+# The output should look similar to this:
+# === Backup started: Mon Feb 23 03:30:01 PM UTC 2026 ===
+# === Backup finished: Mon Feb 23 03:30:03 PM UTC 2026 ===
+
+# 4. Save the borg passphrase for disaster recovery
+./tf.sh foobar output -raw borg_passphrase
+```
+
+Each environment gets its own StorageBox **subaccount** (created automatically), chrooted to
+`<project>/<environment>/`. App backups go to `./app`, DB backups to `./db`.
+
+### Borg Helper Script
+
+Every server with backups enabled gets `/opt/scripts/borg.sh` — a wrapper that sets `BORG_REPO`,
+`BORG_PASSPHRASE`, and `BORG_RSH`, then passes all arguments to `borg`. This avoids having to export
+environment variables manually when interacting with borg:
+
+```bash
+# List all archives
+sudo /opt/scripts/borg.sh list
+
+# Show details of a specific archive
+sudo /opt/scripts/borg.sh info ::archive-name
+
+# Extract a file from an archive
+sudo /opt/scripts/borg.sh extract ::archive-name path/to/file
+
+# Any borg command works
+sudo /opt/scripts/borg.sh <command> [args...]
+```
+
+The automated backup script (`borg-backup.sh`) and the cloud-init `borg init` both use this helper
+internally.
+
+### Restoring from a Backup
+
+Backups only cover `/mnt/storage` (application data, compose files, database volumes). Docker images
+live on the server's local disk and are not affected by a restore — no need to re-pull them.
+
+```bash
+# 1. SSH into the server as root
+ssh root@<foobar-ip> -p <foobar-ssh-port>
+
+# 2. List available archives to find the one you want
+/opt/scripts/borg.sh list
+
+# 3. Optional: Inspect an archive to see what it contains
+/opt/scripts/borg.sh list ::<archive-name>
+
+# 4. Stop the running application
+su - deploy -c "cd /mnt/storage/app && docker compose down"
+
+# 5. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
+/opt/scripts/borg-backup.sh
+
+# 6. Restore — extract the archive over the existing data
+cd / # <- THIS IS IMPORTANT! Because the path in the backup archive is absolute
+/opt/scripts/borg.sh extract ::<archive-name>
+
+# 7. Start the application again
+su - deploy -c "cd /mnt/storage/app && docker compose up -d"
+```
+
+> **Note:** After server recreation (new server = empty disk), trigger a re-deployment from CI to
+> pull fresh images.
+
+To restore only specific files or directories (e.g., just the database volume):
+
+```bash
+cd /
+/opt/scripts/borg.sh extract ::<archive-name> mnt/HC_Volume_<id>/db
+```
+
+Note: Paths inside borg archives are relative (no leading `/`). Since the backup resolves the
+`/mnt/storage` symlink, paths use the actual volume mount `mnt/HC_Volume_<id>/`. Use
+`/opt/scripts/borg.sh list ::<archive-name>` to see the exact paths.
+
+**If the database server is separate**, restore it the same way via the app server as jump host:
+
+```bash
+# Connect directly to the database server
+ssh -J deploy@<app-ip> root@10.0.1.20
+
+# On the database server:
+su - deploy -c "docker compose down"
+/opt/scripts/borg-backup.sh
+cd /
+/opt/scripts/borg.sh extract ::<archive-name>
+su - deploy -c "docker compose up -d"
+```
+
+## Server Replacement Safety
+
+When changing `server_type` or `location`, the module protects against data corruption and
+misconfiguration:
+
+- **Precondition check:** Before destroying the existing server, OpenTofu verifies that the
+  requested server type is available and not deprecated at the target location. This catches
+  misconfigurations early without touching the existing server.
+- **Destroy-then-create (default):** The old server is fully stopped before the volume is detached
+  and reattached to the new server. This avoids data corruption from in-flight Docker writes during
+  a volume swap. There is a brief downtime window, but server type changes are rare and planned.
+
+On boot, Docker Compose services restart automatically via `restart: always` in the production
+compose files, if a deployment has happened before. If the server been replaced, you need to
+manually deploy the application again, so it can pull the necessary Docker images.
+
+## Directory Structure
+
+```
+├── tf.sh                    # CLI wrapper
+├── env.sh                   # Global secrets (gitignored)
+└── terraform/
+    ├── environments/
+    │   ├── _shared/         # Symlinked into each environment
+    │   ├── _example/        # Template for new environments
+    │   └── foobar/          # An active environment
+    └── modules/
+        └── hetzner-environment/  # Reusable environment module
+```

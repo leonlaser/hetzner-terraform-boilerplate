@@ -26,7 +26,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /run/user/1001/docker.sock:/var/run/docker.sock:ro
+      - ${DOCKER_HOST}:/var/run/docker.sock:ro
       - ${ACME_STORAGE_DIR}:${ACME_STORAGE_DIR}
     labels:
       traefik.enable: "true"
@@ -44,7 +44,7 @@ services:
     depends_on:
       - traefik
     # Pass only the variables this service needs.
-    # These are resolved from the .env file.
+    # These are resolved from the deployed .env file.
     environment:
       - NODE_ENV=${NODE_ENV}
       - APP_SECRET=${APP_SECRET}

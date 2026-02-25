@@ -5,12 +5,11 @@
 # resources like servers.
 # =============================================================================
 
-
-data "hcloud_ssh_key" "keys" {
-  for_each = toset(var.ssh_key_names)
+data "hcloud_ssh_key" "root_ssh_key_ids" {
+  for_each = toset(var.root_access_ssh_key_names)
   name     = each.value
 }
 
 locals {
-  ssh_key_ids = [for key in data.hcloud_ssh_key.keys : key.id]
+  root_ssh_key_ids = [for key in data.hcloud_ssh_key.root_ssh_key_ids : key.id]
 }

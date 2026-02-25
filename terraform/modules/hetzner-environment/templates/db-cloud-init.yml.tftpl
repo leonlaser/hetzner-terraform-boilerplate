@@ -21,8 +21,6 @@ packages:
 
   # security / utils
   - lsb-release
-  - fail2ban
-  - ufw
   - unattended-upgrades
   - msmtp
   - msmtp-mta
@@ -34,27 +32,6 @@ packages:
 %{ endif }
 
 write_files:
-  # Configure floating IP
-  - path: /etc/netplan/60-floating-ip.yaml
-    permissions: '0644'
-    content: |
-      ${indent(6, chomp(netplan_config))}
-
-  # Fail2Ban
-  - path: /etc/fail2ban/jail.local
-    permissions: '0644'
-    content: |
-      [sshd]
-      enabled = true
-      maxretry = 3
-      bantime = 3600
-
-  # SSH Hardening
-  - path: /etc/ssh/sshd_config.d/hardening.conf
-    permissions: '0600'
-    content: |
-      ${indent(6, chomp(sshd_hardening_config))}
-
   # Auto Upgrades
   - path: /etc/apt/apt.conf.d/30auto-upgrades
     permissions: '0644'
@@ -81,17 +58,6 @@ write_files:
       net.ipv4.ip_unprivileged_port_start=80
       # Increase user namespaces
       user.max_user_namespaces=28633
-%{ if swap_size > 0 }
-      # Prefer RAM over swap; only swap under memory pressure
-      vm.swappiness=10
-%{ endif }
-
-  # Allow deploy user to trigger backups before deployments
-  - path: /etc/sudoers.d/deploy-backup
-    permissions: '0440'
-    content: |
-      deploy ALL=(root) NOPASSWD: /opt/scripts/borg-backup.sh
-      deploy ALL=(root) NOPASSWD: /opt/scripts/pre-deploy-backup.sh
 
   # prepare subuid/subgid for rootless Docker
   - path: /etc/subuid
@@ -104,6 +70,20 @@ write_files:
       deploy:100000:65536
     append: true
 
+  # Allow deploy user to trigger backups before deployments
+  - path: /etc/sudoers.d/deploy-backup
+    permissions: '0440'
+    content: |
+      deploy ALL=(root) NOPASSWD: /opt/scripts/borg-backup.sh
+
+  # Docker Compose file for PostgreSQL
+  - path: /home/deploy/docker-compose.yml
+    permissions: '0644'
+    owner: deploy:deploy
+    defer: true
+    content: |
+      ${indent(6, chomp(docker_compose_config))}
+
   # Rootless Docker env — sourced by .profile and .bashrc (see runcmd)
   - path: /home/deploy/.docker-env
     owner: deploy:deploy
@@ -113,15 +93,6 @@ write_files:
       export XDG_RUNTIME_DIR=/run/user/1000
       export PATH=/usr/bin:$PATH
       export DOCKER_HOST=unix:///run/user/1000/docker.sock
-
-  # Rootless Docker env for non-interactive SSH sessions (CI/CD)
-  - path: /home/deploy/.ssh/environment
-    owner: deploy:deploy
-    permissions: '0600'
-    defer: true
-    content: |
-      DOCKER_HOST=unix:///run/user/1000/docker.sock
-      XDG_RUNTIME_DIR=/run/user/1000
 
 %{ if backup_enabled }
   # Backup SSH private key
@@ -147,35 +118,9 @@ write_files:
     permissions: '0700'
     content: |
       ${indent(6, chomp(borg_helper_script))}
-
-  # Pre-deploy backup script (triggers app backup + DB backup if available)
-  - path: /opt/scripts/pre-deploy-backup.sh
-    permissions: '0700'
-    content: |
-      ${indent(6, chomp(pre_deploy_backup_script))}
-%{ if database_ip != "" }
-
-  # SSH key for internal access (app -> db)
-  - path: /home/deploy/.ssh/internal_key
-    owner: deploy:deploy
-    permissions: '0600'
-    defer: true
-    content: |
-      ${indent(6, chomp(deploy_private_key))}
-%{ endif }
 %{ endif }
 
 runcmd:
-  # Initialize services
-  - systemctl enable fail2ban
-  - systemctl start fail2ban
-
-  # Configure firewall
-  - ufw allow ${ssh_port}
-  - ufw allow 80
-  - ufw allow 443
-  - ufw enable
-
   # Setup rootless Docker
   ## Apply subuid and subgid settings
   - sysctl --system
@@ -194,8 +139,9 @@ runcmd:
 
   # Symlink Hetzner volume automount to /mnt/storage
   - ln -sfn /mnt/HC_Volume_${volume_id} /mnt/storage
-  - mkdir -p /mnt/storage/app
-  - chown deploy:deploy /mnt/storage/app
+
+  # Start PostgreSQL via Docker Compose
+  - su - deploy -c "docker compose up -d"
 
   # Cronjob to check for required reboots and email notification
   - echo "0 * * * * /opt/scripts/check-reboot-required.sh" | crontab -
@@ -205,7 +151,7 @@ runcmd:
   - echo '${backup_ssh_public_key}' | sshpass -p '${storagebox_password}' ssh -p 23 -o StrictHostKeyChecking=accept-new ${storagebox_user}@${storagebox_host} install-ssh-key
 
   # Create borg repo directory (home dir has .ssh/ so can't be repo root)
-  - ssh -i /root/.ssh/backup_key -o StrictHostKeyChecking=accept-new ${storagebox_user}@${storagebox_host} mkdir app || true
+  - ssh -i /root/.ssh/backup_key -o StrictHostKeyChecking=accept-new ${storagebox_user}@${storagebox_host} mkdir db || true
 
   # Initialize borg repository (ignore "already exists" error)
   - /opt/scripts/borg.sh init --encryption=repokey --remote-path=borg-1.4 || true
@@ -220,13 +166,6 @@ runcmd:
 
   # Initial reboot after package updates
   - reboot
-%{ if swap_size > 0 }
-
-swap:
-  filename: /swapfile
-  size: ${swap_size * 1024 * 1024 * 1024}
-  maxsize: ${swap_size * 1024 * 1024 * 1024}
-%{ endif }
 
 apt:
   sources:

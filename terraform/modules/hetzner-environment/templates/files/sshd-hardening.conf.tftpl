@@ -1,0 +1,12 @@
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+Port ${ssh_port}
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+MaxAuthTries 2
+AllowTcpForwarding no
+X11Forwarding no
+AllowAgentForwarding no
+AuthorizedKeysFile .ssh/authorized_keys
+AllowUsers root deploy
+PermitUserEnvironment yes

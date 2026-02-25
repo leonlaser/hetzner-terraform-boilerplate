@@ -3,9 +3,9 @@ variable "project_name" {
   description = "Short project identifier used for naming resources (e.g. 'myapp')"
 }
 
-variable "environment" {
+variable "environment_name" {
   type        = string
-  description = "Environment name (e.g. 'production', 'staging', 'demo')"
+  description = "Environment name (e.g. 'prod', 'stage', 'demo')"
 }
 
 variable "deploy_branch" {
@@ -16,7 +16,7 @@ variable "deploy_branch" {
 variable "server_type" {
   type        = string
   default     = "cx23"
-  description = "Hetzner server type (e.g. cx32, cx42)"
+  description = "Hetzner server type (e.g. cx33, cx43, cpx22, cpx32, ccx13, ccx23)"
 }
 
 variable "volume_size" {
@@ -41,15 +41,21 @@ variable "docker_registry" {
   description = "Docker registry for pulling container images"
 }
 
-variable "ssh_key_ids" {
+variable "root_ssh_key_ids" {
   type        = list(number)
-  description = "List of Hetzner SSH key IDs to install on the server"
+  description = "List of Hetzner SSH key IDs to give root access"
 }
 
 variable "location" {
   type        = string
-  default     = "nbg1"
-  description = "Hetzner datacenter location (nbg1, fsn1, hel1, ash)"
+  default     = "fsn1"
+  description = "Hetzner datacenter location for servers and volumes (fsn1, nbg1, hel1, ash)"
+}
+
+variable "floating_ip_location" {
+  type        = string
+  default     = null
+  description = "Hetzner location for floating IPs. Defaults to var.location if not set."
 }
 
 variable "smtp_host" {
@@ -62,22 +68,24 @@ variable "smtp_port" {
   description = "SMTP server port"
 }
 
-variable "smtp_from" {
+variable "server_info_mail_from" {
   type        = string
-  description = "SMTP sender address"
+  description = "Sender address for server info mails"
 }
 
 variable "smtp_user" {
-  type      = string
-  sensitive = true
+  type        = string
+  sensitive   = true
+  description = "SMTP login user"
 }
 
 variable "smtp_password" {
-  type      = string
-  sensitive = true
+  type        = string
+  sensitive   = true
+  description = "SMTP login password"
 }
 
-variable "unattended_upgrades_mail_to" {
+variable "server_info_mail_to" {
   type        = string
   description = "Email address for unattended-upgrades and server reboot notifications"
 }
@@ -87,10 +95,13 @@ variable "acme_mail" {
   description = "Email address for Let's Encrypt ACME certificate notifications"
 }
 
-variable "traefik_dashboard_users" {
-  type        = string
-  sensitive   = true
-  description = "htpasswd-encoded basic auth credentials for the Traefik dashboard"
+variable "delete_protection" {
+  type = object({
+    server      = bool
+    volume      = bool
+    floating_ip = bool
+  })
+  description = "Enable Hetzner delete_protection and OpenTofu prevent_destroy for critical resources"
 }
 
 # ---------------------------------------------------------------------------
@@ -99,9 +110,32 @@ variable "traefik_dashboard_users" {
 # These are passed into the .env template deployed to the server.
 # Customize or extend them to match your application's needs.
 
+variable "backup" {
+  type = object({
+    storage_box_id = number
+  })
+  default     = null
+  description = "StorageBox ID for borg backups. Null disables backups."
+}
+
 variable "app_env_vars" {
   type        = map(string)
   default     = {}
   sensitive   = true
   description = "Additional application-specific environment variables injected into the deployed .env file"
+}
+
+variable "swap_size" {
+  type        = number
+  default     = 0
+  description = "Swap file size in GB. 0 disables swap."
+}
+
+variable "database" {
+  type = object({
+    server_type = string
+    volume_size = number
+  })
+  default     = null
+  description = "Dedicated database server. Null means DB runs on the app server."
 }

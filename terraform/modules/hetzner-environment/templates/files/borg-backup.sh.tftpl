@@ -1,0 +1,34 @@
+#!/bin/bash
+set -euo pipefail
+
+BORG="/opt/scripts/borg.sh"
+BACKUP_NAME="$(hostname)-$(date +%Y-%m-%dT%H:%M:%S)"
+BACKUP_PATH="$(readlink -f /mnt/storage)"
+LOG_FILE="/var/log/borg-backup.log"
+
+{
+  echo "=== Backup started: $(date) ==="
+
+  # Create backup (/mnt/storage is a symlink — resolve to actual mount)
+  $BORG create \
+    --compression zstd,3 \
+    --exclude '*/lost+found' \
+    "::$BACKUP_NAME" \
+    "$BACKUP_PATH"
+
+  # Prune old backups
+  $BORG prune \
+    --keep-hourly 48 \
+    --keep-daily 7 \
+    --keep-weekly 4 \
+    --keep-monthly 6 \
+    --keep-yearly 1
+
+  # Compact repository
+  $BORG compact
+
+  echo "=== Backup finished: $(date) ==="
+} >> "$LOG_FILE" 2>&1 || {
+  printf "Subject: [$(hostname)] Borg backup FAILED\n\nBackup failed at $(date).\n\nLast 50 lines of log:\n$(tail -50 $LOG_FILE)" \
+    | msmtp ${notify_email}
+}

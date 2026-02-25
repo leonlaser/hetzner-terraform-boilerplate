@@ -1,5 +1,4 @@
-.terraform.lock.hcl
 .terraform
-terraform.tfvars
 terraform.tfstate*
-backend.hcl
+env.sh
+environments/test

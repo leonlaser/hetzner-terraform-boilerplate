@@ -1,0 +1,21 @@
+services:
+  database:
+    image: postgres:16@sha256:301bcb60b8a3ee4ab7e147932723e3abd1cef53516ce5210b39fd9fe5e3602ae
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 60s
+      retries: 5
+      start_period: 80s
+    volumes:
+      # We use PostgreSQL <= 17 and need to persist the `data` folder.
+      # When upgrading PostgreSQL, the volume must point to `/var/lib/postgresql`.
+      # @See https://hub.docker.com/_/postgres#pgdata for more infos.
+      - /mnt/storage/var/docker/postgresql:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${db_user}
+      POSTGRES_PASSWORD: ${db_password}
+      POSTGRES_DB: ${db_name}
+    ports:
+      - "${db_listen_ip}:5432:5432"

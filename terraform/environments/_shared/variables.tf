@@ -14,9 +14,16 @@ variable "github_owner" {
   type = string
 }
 
+variable "environment_name" {
+  type = string
+}
+
+variable "deploy_branch" {
+  type = string
+}
+
 variable "project_name" {
-  type        = string
-  description = "Short project identifier used for naming resources (e.g. 'myapp')"
+  type = string
 }
 
 variable "domain" {
@@ -32,13 +39,18 @@ variable "docker_registry" {
   default = "ghcr.io"
 }
 
-variable "ssh_key_names" {
+variable "root_access_ssh_key_names" {
   type = list(string)
 }
 
 variable "location" {
   type    = string
-  default = "nbg1"
+  default = "fsn1"
+}
+
+variable "floating_ip_location" {
+  type    = string
+  default = null
 }
 
 variable "smtp_host" {
@@ -47,10 +59,6 @@ variable "smtp_host" {
 
 variable "smtp_port" {
   type = number
-}
-
-variable "smtp_from" {
-  type = string
 }
 
 variable "smtp_user" {
@@ -63,19 +71,33 @@ variable "smtp_password" {
   sensitive = true
 }
 
-variable "unattended_upgrades_mail_to" {
-  type        = string
-  description = "Email address for unattended-upgrades and server reboot notifications"
+variable "server_info_mail_from" {
+  type = string
+}
+
+variable "server_info_mail_to" {
+  type = string
 }
 
 variable "acme_mail" {
-  type        = string
-  description = "Email address for Let's Encrypt ACME certificate notifications"
+  type = string
 }
 
-variable "traefik_dashboard_users" {
-  type      = string
-  sensitive = true
+variable "delete_protection" {
+  type = object({
+    server      = bool
+    volume      = bool
+    floating_ip = bool
+  })
+  description = "Enable Hetzner delete_protection and OpenTofu prevent_destroy for critical resources"
+}
+
+variable "backup" {
+  type = object({
+    storage_box_id = number
+  })
+  default     = null
+  description = "StorageBox ID for borg backups. Null disables backups."
 }
 
 variable "server_type" {
@@ -88,9 +110,29 @@ variable "volume_size" {
   default = 10
 }
 
+variable "base_env_vars" {
+  type      = map(string)
+  default   = {}
+  sensitive = true
+}
+
 variable "app_env_vars" {
-  type        = map(string)
-  default     = {}
-  sensitive   = true
-  description = "Additional application-specific environment variables injected into the deployed .env file"
+  type      = map(string)
+  default   = {}
+  sensitive = true
+}
+
+variable "swap_size" {
+  type        = number
+  default     = 0
+  description = "Swap file size in GB. 0 disables swap."
+}
+
+variable "database" {
+  type = object({
+    server_type = string
+    volume_size = number
+  })
+  default     = null
+  description = "Dedicated database server. Null means DB runs on the app server."
 }

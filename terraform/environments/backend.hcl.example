@@ -1,5 +1,0 @@
-region = "eu-central-1"
-
-endpoints = {
-  s3 = "https://you.object-storage.example"
-}
