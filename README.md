@@ -97,9 +97,7 @@ clipboard. Users of linux can use `xclip --clipboard --input` or `xsel -selectio
 instead:
 
 ```bash
-./tf.sh foobar output borg_passphrase | pbcopy
-./tf.sh foobar output borg_passphrase | xclip --clipboard --input
-./tf.sh foobar output borg_passphrase | xsel -selection clipboard
+./tf.sh foobar output --raw borg_passphrase | pbcopy
 ```
 
 Traefik dashboard credentials are auto-generated per environment (username: `admin`):
