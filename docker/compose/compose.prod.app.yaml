@@ -5,15 +5,13 @@ services:
   traefik:
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "443:443"
     volumes:
       - /run/user/1000/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.prod.yaml:/etc/traefik/traefik.yaml:ro
       - ${ACME_STORAGE_DIR}:/letsencrypt
-    command:
-      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_MAIL}"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
-      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+    environment:
+      - TRAEFIK_CERTIFICATESRESOLVERS_letsencrypt_ACME_EMAIL=${ACME_MAIL}
     labels:
       traefik.http.routers.dashboard.entrypoints: websecure
       traefik.http.routers.dashboard.tls.certresolver: letsencrypt
