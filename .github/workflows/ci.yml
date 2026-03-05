@@ -88,7 +88,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - image: fronted
+          - image: frontend
             dockerfile: ./docker/example-services/frontend/Dockerfile
             context: ./docker/example-services/frontend
           - image: backend
