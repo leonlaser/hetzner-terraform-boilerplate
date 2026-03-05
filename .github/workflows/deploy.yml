@@ -67,8 +67,8 @@ jobs:
       - name: Copy compose files
         run: |
           scp -i ~/.ssh/deploy_key -P ${{ vars.APP_SERVER_SSH_PORT }} \
-            docker/compose/_compose.base.yaml \
-            docker/compose/compose.prod.yaml \
+            docker/compose/_compose.base.app.yaml \
+            docker/compose/compose.prod.app.yaml \
             deploy@${{ vars.APP_SERVER_IP }}:/mnt/storage/app/
           scp -i ~/.ssh/deploy_key -P ${{ vars.APP_SERVER_SSH_PORT }} \
             docker/compose/traefik/traefik.prod.yaml \
