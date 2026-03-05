@@ -11,8 +11,13 @@ resource "hcloud_network_subnet" "environment" {
   ip_range     = "10.0.1.0/24"
 }
 
-resource "hcloud_firewall" "environment" {
-  name   = "${var.project_name}-${var.environment_name}"
+moved {
+  from = hcloud_firewall.environment
+  to   = hcloud_firewall.app
+}
+
+resource "hcloud_firewall" "app" {
+  name   = "${var.project_name}-${var.environment_name}-app"
   labels = local.firewall_labels
 
   rule {
@@ -38,4 +43,10 @@ resource "hcloud_firewall" "environment" {
     port        = "80"
     source_ips  = ["0.0.0.0/0", "::/0"]
   }
+}
+
+resource "hcloud_firewall" "database" {
+  count  = var.database != null ? 1 : 0
+  name   = "${var.project_name}-${var.environment_name}-db"
+  labels = local.firewall_labels
 }

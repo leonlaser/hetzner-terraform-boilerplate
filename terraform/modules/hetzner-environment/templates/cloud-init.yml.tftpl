@@ -110,8 +110,7 @@ write_files:
   - path: /etc/sudoers.d/ops
     permissions: '0440'
     content: |
-      deploy ALL=(ops) NOPASSWD: /home/ops/scripts/borg-backup.sh
-      deploy ALL=(ops) NOPASSWD: /home/ops/scripts/pre-deploy-backup.sh
+      deploy ALL=(ops) NOPASSWD: /home/ops/scripts/borg-backup.sh, /home/ops/scripts/pre-deploy-backup.sh
       ops ALL=(root) NOPASSWD: /home/ops/scripts/finish-provisioning.sh
       ops ALL=(deploy) NOPASSWD: ALL
 
@@ -172,6 +171,9 @@ write_files:
 %{ endif }
 
 runcmd:
+  # Apply floating IP netplan configuration
+  - netplan apply
+
   # Initialize services
   - systemctl enable fail2ban
   - systemctl start fail2ban
@@ -205,6 +207,14 @@ runcmd:
   - ln -sfn /mnt/HC_Volume_${volume_id} /mnt/storage
   - mkdir -p /mnt/storage/app
   - chown deploy:deploy /mnt/storage/app
+  
+  # Create var directory for deploy user to store related data, like docker volumes, log files etc.
+  - mkdir -p /mnt/storage/var
+  - chown deploy:deploy /mnt/storage/var
+
+  # Create traefik config directory for deploy user
+  - mkdir -p/mnt/storage/app/traefik
+  - chown deploy:deploy/mnt/storage/app/traefik
 
   # Create ops directory structure
   - mkdir -p /home/ops/.config/borg /home/ops/.ssh /home/ops/logs /home/ops/scripts

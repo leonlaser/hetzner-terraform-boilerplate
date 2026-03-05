@@ -8,7 +8,6 @@ output "server_ip_v6" {
 
 output "ssh_port" {
   value     = random_integer.app_ssh_port.result
-  sensitive = true
 }
 
 output "environment" {

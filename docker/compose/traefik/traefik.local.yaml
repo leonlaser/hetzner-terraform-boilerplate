@@ -1,0 +1,17 @@
+api:
+  insecure: true
+  dashboard: true
+
+providers:
+  docker:
+    exposedByDefault: false
+    network: proxy
+
+entryPoints:
+  web:
+    address: ":80"
+
+log:
+  level: INFO
+
+accessLog: {}

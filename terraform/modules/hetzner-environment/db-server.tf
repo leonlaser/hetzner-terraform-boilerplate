@@ -24,11 +24,18 @@ resource "hcloud_server" "database" {
   delete_protection  = var.delete_protection.server
   rebuild_protection = var.delete_protection.server
 
-  user_data = local.db_cloud_init
+  firewall_ids = [hcloud_firewall.database[0].id]
+  user_data    = local.db_cloud_init
 
   public_net {
-    ipv4_enabled = false
-    ipv6_enabled = false
+    ipv4_enabled = true
+    ipv6_enabled = true
+  }
+
+  network {
+    network_id = hcloud_network.environment.id
+    ip         = local.internal_ips.database
+    alias_ips  = []
   }
 
   depends_on = [hcloud_network_subnet.environment]
@@ -48,14 +55,6 @@ resource "hcloud_server" "database" {
       error_message = "Database server type '${var.database.server_type}' is not available (or deprecated) in location '${var.location}'."
     }
   }
-}
-
-resource "hcloud_server_network" "database" {
-  count = var.database != null ? 1 : 0
-
-  server_id  = hcloud_server.database[0].id
-  network_id = hcloud_network.environment.id
-  ip         = local.internal_ips.database
 }
 
 resource "hcloud_volume" "database" {

@@ -1,0 +1,8 @@
+include:
+  - _compose.base.db.yaml
+
+services:
+  database:
+    restart: unless-stopped
+    volumes:
+      - ${DB_VOLUME}:/var/lib/postgresql

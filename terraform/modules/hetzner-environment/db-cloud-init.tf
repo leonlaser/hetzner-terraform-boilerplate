@@ -6,7 +6,8 @@ locals {
     volume_id             = hcloud_volume.database[0].id
 
     sshd_hardening_config = templatefile("${path.module}/templates/files/sshd-hardening.conf.tftpl", {
-      ssh_port = 22
+      ssh_port             = 22
+      allow_tcp_forwarding = "no"
     })
 
     auto_upgrades_config = templatefile("${path.module}/templates/files/30auto-upgrades.tftpl", {

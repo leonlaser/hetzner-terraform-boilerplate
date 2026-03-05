@@ -1,0 +1,33 @@
+include:
+  - _compose.base.app.yaml
+
+services:
+  traefik:
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - /run/user/1000/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.prod.yaml:/etc/traefik/traefik.yaml:ro
+      - ${ACME_STORAGE_DIR}:/letsencrypt
+    command:
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_MAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+    labels:
+      traefik.http.routers.dashboard.entrypoints: websecure
+      traefik.http.routers.dashboard.tls.certresolver: letsencrypt
+      traefik.http.routers.dashboard.middlewares: dashboard-auth
+      traefik.http.middlewares.dashboard-auth.basicauth.users: ${TRAEFIK_DASHBOARD_USERS}
+
+  frontend:
+    restart: unless-stopped
+    labels:
+      traefik.http.routers.frontend.entrypoints: websecure
+      traefik.http.routers.frontend.tls.certresolver: letsencrypt
+
+  backend:
+    restart: unless-stopped
+    labels:
+      traefik.http.routers.backend.entrypoints: websecure
+      traefik.http.routers.backend.tls.certresolver: letsencrypt

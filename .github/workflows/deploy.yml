@@ -8,9 +8,7 @@ on:
         required: true
         type: choice
         options:
-          - production
-          - staging
-          - demo
+          - test # TODO: Change to your environments
       image_tag:
         description: 'Image tag to deploy'
         required: true
@@ -45,17 +43,56 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ vars.SERVER_IP }} >> ~/.ssh/known_hosts
 
-      # TODO: Adapt the list of compose files to your project
+      - name: Set compose files
+        id: compose
+        run: |
+          COMPOSE_FILES="compose.prod.app.yaml"
+          if [[ "${{ vars.DEPLOY_DATABASE_WITH_APP }}" == "true" ]]; then
+            COMPOSE_FILES="$COMPOSE_FILES:compose.prod.db.yaml"
+          fi
+          echo "files=$COMPOSE_FILES" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy .env
+        run: |
+          printf '%s' "$APP_ENV" > .env.tmp
+          printf '\nIMAGE_TAG=%s\n' "${{ inputs.image_tag }}" >> .env.tmp
+          printf 'COMPOSE_FILE=%s\n' "${{ steps.compose.outputs.files }}" >> .env.tmp
+          scp -i ~/.ssh/deploy_key -P ${{ vars.APP_SERVER_SSH_PORT }} \
+            .env.tmp \
+            deploy@${{ vars.APP_SERVER_IP }}:/mnt/storage/app/.env
+          rm .env.tmp
+        env:
+          APP_ENV: ${{ secrets.APP_ENV }}
+
       - name: Copy compose files
         run: |
           scp -i ~/.ssh/deploy_key \
-            compose.yaml compose.prod.yaml \
-            deploy@${{ vars.SERVER_IP }}:~
+            docker/compose/_compose.base.yaml \
+            docker/compose/compose.prod.yaml \
+            deploy@${{ vars.SERVER_IP }}:/mnt/storage/app/
+          scp -i ~/.ssh/deploy_key \
+            docker/compose/traefik/traefik.prod.yaml \
+            deploy@${{ vars.SERVER_IP }}:/mnt/storage/app/traefik/
 
+
+      - name: Copy database compose files
+        if: vars.DEPLOY_DATABASE_WITH_APP == 'true'
+        run: |
+          scp -i ~/.ssh/deploy_key -P ${{ vars.APP_SERVER_SSH_PORT }} \
+            infrastructure/docker/_compose.base.db.yaml \
+            infrastructure/docker/compose.prod.db.yaml \
+            deploy@${{ vars.APP_SERVER_IP }}:/mnt/storage/app/
+
+      - name: Pre-deploy backup
+        if: vars.BACKUP_ENABLED == 'true'
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${{ vars.APP_SERVER_SSH_PORT }} deploy@${{ vars.APP_SERVER_IP }} \
+            "sudo -u ops /home/ops/scripts/pre-deploy-backup.sh"
+          
       - name: Deploy
         run: |
-          ssh -i ~/.ssh/deploy_key deploy@${{ vars.SERVER_IP }} \
-            "export IMAGE_TAG='${{ inputs.image_tag }}' && \
+          ssh -i ~/.ssh/deploy_key -p ${{ vars.APP_SERVER_SSH_PORT }} deploy@${{ vars.APP_SERVER_IP }} \
+            "cd /mnt/storage/app && \
              echo '${{ secrets.GITHUB_TOKEN }}' | docker login ${{ vars.DOCKER_REGISTRY }} -u ${{ github.actor }} --password-stdin && \
-             docker compose -f compose.yaml -f compose.prod.yaml pull && \
-             docker compose -f compose.yaml -f compose.prod.yaml up -d --remove-orphans"
+             docker compose pull && \
+             docker compose up -d --remove-orphans"

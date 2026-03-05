@@ -83,6 +83,7 @@ module "environment" {
   backup                = var.backup
   database              = var.database
   app_env_vars = merge(
+    local.dynamic_env_vars,
     var.base_env_vars,
     var.app_env_vars
   )
@@ -100,6 +101,10 @@ output "environment" {
   value = module.environment.environment
 }
 
+output "ssh_port" {
+  value = module.environment.ssh_port
+}
+
 output "traefik_dashboard_password" {
   value     = module.environment.traefik_dashboard_password
   sensitive = true
@@ -109,12 +114,6 @@ output "borg_passphrase" {
   value     = module.environment.borg_passphrase
   sensitive = true
 }
-
-output "ssh_port" {
-  value     = module.environment.ssh_port
-  sensitive = true
-}
-
 output "db_borg_passphrase" {
   value     = module.environment.db_borg_passphrase
   sensitive = true

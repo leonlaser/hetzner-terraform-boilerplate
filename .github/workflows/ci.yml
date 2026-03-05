@@ -2,10 +2,8 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - develop
-      - demo
+    branches: # TODO: Replace with your project's branches
+      - main 
   pull_request:
 
 permissions:
@@ -17,23 +15,22 @@ jobs:
   # ---------------------------------------------------------------------------
   # TODO: Replace with your project's build / test / lint steps
   # ---------------------------------------------------------------------------
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
+      #- uses: actions/checkout@v4
+      #- uses: actions/setup-node@v4
+      #  with:
+      #    node-version: 25
+      - run: echo "[TODO] replace my steps"
+      #- run: npm ci
+      #- run: npm run lint
+      #- run: npm test
+      #- run: npm run build
 
   # ---------------------------------------------------------------------------
-  # Resolve deployment environment from branch name
+  # Resolve deployment environment from branch name and generate image tag
+  # TODO: This is just an example, replace with your own logic.
   # ---------------------------------------------------------------------------
   resolve-environment:
     runs-on: ubuntu-latest
@@ -45,18 +42,10 @@ jobs:
       - name: Resolve environment from branch
         id: resolve
         run: |
+          echo "image_tag=${{ github.run_id }}" >> "$GITHUB_OUTPUT"
           case "${{ github.ref_name }}" in
             main)
-              echo "environment=production" >> "$GITHUB_OUTPUT"
-              echo "image_tag=latest" >> "$GITHUB_OUTPUT"
-              ;;
-            develop)
-              echo "environment=staging" >> "$GITHUB_OUTPUT"
-              echo "image_tag=staging" >> "$GITHUB_OUTPUT"
-              ;;
-            demo)
-              echo "environment=demo" >> "$GITHUB_OUTPUT"
-              echo "image_tag=demo" >> "$GITHUB_OUTPUT"
+              echo "environment=test" >> "$GITHUB_OUTPUT"
               ;;
           esac
 
@@ -66,16 +55,15 @@ jobs:
   # ---------------------------------------------------------------------------
   docker:
     runs-on: ubuntu-latest
-    needs: [build, resolve-environment]
+    needs: [test, resolve-environment]
     if: github.event_name == 'push'
     strategy:
       matrix:
         include:
-          - image: app
-            dockerfile: ./Dockerfile
-          # Add more images as needed:
-          # - image: worker
-          #   dockerfile: ./apps/worker/Dockerfile
+          - image: fronted
+            dockerfile: ./docker/example-service/frontend/Dockerfile
+          - image: backend
+            dockerfile: ./docker/example-service/backend/Dockerfile
     steps:
       - uses: actions/checkout@v4
 

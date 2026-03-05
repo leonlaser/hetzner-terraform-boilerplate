@@ -104,8 +104,8 @@ write_files:
       ops ALL=(root) NOPASSWD: /home/ops/scripts/finish-provisioning.sh
       ops ALL=(deploy) NOPASSWD: ALL
 
-  # Docker Compose file for PostgreSQL
-  - path: /home/deploy/docker-compose.yml
+  # Docker Compose file for running the database
+  - path: /home/deploy/compose.yml
     permissions: '0644'
     owner: deploy:deploy
     defer: true
@@ -156,14 +156,17 @@ runcmd:
   - su - deploy -c "systemctl --user enable docker"
   ## Make "deploy" user linger around, so the daemon can start without a login
   - loginctl enable-linger deploy
+
   ## Source rootless Docker env from both .profile (login shells) and .bashrc (interactive non-login shells)
   - echo '. ~/.docker-env' >> /home/deploy/.profile
   - echo '. ~/.docker-env' >> /home/deploy/.bashrc
 
   # Symlink Hetzner volume automount to /mnt/storage
   - ln -sfn /mnt/HC_Volume_${volume_id} /mnt/storage
+  - mkdir -p /mnt/storage/var
+  - chown deploy:deploy /mnt/storage/var
 
-  # Start PostgreSQL via Docker Compose
+  # Start Database via Docker Compose
   - su - deploy -c "docker compose up -d"
 
   # Create ops directory structure

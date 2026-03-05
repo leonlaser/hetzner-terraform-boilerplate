@@ -20,7 +20,7 @@ resource "hcloud_server" "app" {
   delete_protection  = var.delete_protection.server
   rebuild_protection = var.delete_protection.server
 
-  firewall_ids = [hcloud_firewall.environment.id]
+  firewall_ids = [hcloud_firewall.app.id]
 
   user_data = local.cloud_init
 

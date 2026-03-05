@@ -3,9 +3,12 @@ locals {
     generated_public_key  = tls_private_key.app_deploy_user.public_key_openssh
     ops_public_key        = tls_private_key.ops_user.public_key_openssh
     admin_ssh_public_keys = var.admin_ssh_public_keys
-    volume_id             = hcloud_volume.app.id
-    ssh_port              = random_integer.app_ssh_port.result
-    has_database          = var.database != null
+    
+    ssh_port       = random_integer.app_ssh_port.result
+    volume_id      = hcloud_volume.app.id
+    swap_size      = var.swap_size
+    has_database   = var.database != null
+    backup_enabled = var.backup != null
 
     netplan_config = templatefile("${path.module}/templates/files/60-floating-ip.yaml.tftpl", {
       floating_ip    = hcloud_floating_ip.master.ip_address
@@ -13,7 +16,8 @@ locals {
     })
 
     sshd_hardening_config = templatefile("${path.module}/templates/files/sshd-hardening.conf.tftpl", {
-      ssh_port = random_integer.app_ssh_port.result
+      ssh_port             = random_integer.app_ssh_port.result
+      allow_tcp_forwarding = var.database != null ? "yes" : "no"
     })
 
     auto_upgrades_config = templatefile("${path.module}/templates/files/30auto-upgrades.tftpl", {
@@ -32,8 +36,6 @@ locals {
       server_info_mail_to = var.server_info_mail_to
     })
 
-    backup_enabled = var.backup != null
-
     borg_backup_script = var.backup != null ? templatefile("${path.module}/templates/files/borg-backup.sh.tftpl", {
       notify_email = var.server_info_mail_to
     }) : ""
@@ -47,7 +49,5 @@ locals {
     finish_provisioning_script = templatefile("${path.module}/templates/files/finish-provisioning.sh.tftpl", {
       database_ip = var.database != null ? local.internal_ips.database : ""
     })
-
-    swap_size = var.swap_size
   })
 }

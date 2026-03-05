@@ -1,0 +1,18 @@
+include:
+  - _compose.base.app.yaml
+
+services:
+  traefik:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.local.yaml:/etc/traefik/traefik.yaml:ro
+    labels:
+      traefik.http.routers.dashboard.entrypoints: web
+
+  frontend:
+    labels:
+      traefik.http.routers.frontend.entrypoints: web
+
+  backend:
+    labels:
+      traefik.http.routers.backend.entrypoints: web
