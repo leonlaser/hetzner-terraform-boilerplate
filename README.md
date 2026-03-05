@@ -30,19 +30,6 @@ Multi-environment OpenTofu setup deploying single-server instances on Hetzner Cl
 - [Server Replacement Safety](#server-replacement-safety)
 - [Directory Structure](#directory-structure)
 
-```
-├── tf.sh                    # CLI wrapper
-├── env.sh                   # Global secrets (gitignored)
-└── terraform/
-    ├── environments/
-    │   ├── _shared/         # Symlinked into each environment
-    │   ├── _example/        # Template for new environments
-    │   ├── foobar/          # An active environment
-    │   └── foobar/env.sh    # Environment specific secrets (gitignored)
-    └── modules/
-        └── hetzner-environment/  # Reusable environment module
-```
-
 ## Prerequisites
 
 - [OpenTofu](https://opentofu.org/) >= 1.10
