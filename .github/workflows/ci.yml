@@ -33,6 +33,9 @@ jobs:
   # Create releases from conventional commits
   # Opens/updates a Release PR on push to main; merging it creates a git tag
   # and GitHub Release.
+  #
+  # See the release-please docs for more info:
+  # https://github.com/googleapis/release-please?tab=readme-ov-file#how-should-i-write-my-commits
   # ---------------------------------------------------------------------------
   release:
     runs-on: ubuntu-latest
