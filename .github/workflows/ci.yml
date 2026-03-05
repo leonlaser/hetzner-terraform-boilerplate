@@ -86,9 +86,9 @@ jobs:
       matrix:
         include:
           - image: fronted
-            dockerfile: ./docker/example-service/frontend/Dockerfile
+            dockerfile: ./docker/example-services/frontend/Dockerfile
           - image: backend
-            dockerfile: ./docker/example-service/backend/Dockerfile
+            dockerfile: ./docker/example-services/backend/Dockerfile
     steps:
       - uses: actions/checkout@v4
 
