@@ -13,7 +13,7 @@ services:
     command:
       - "--certificatesresolvers.letsencrypt.acme.email=${ACME_MAIL}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
-      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
     labels:
       traefik.http.routers.dashboard.entrypoints: websecure
       traefik.http.routers.dashboard.tls.certresolver: letsencrypt

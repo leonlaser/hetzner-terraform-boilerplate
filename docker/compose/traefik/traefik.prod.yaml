@@ -16,6 +16,10 @@ entryPoints:
           scheme: https
   websecure:
     address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+        options: default
 
 log:
   level: WARN
