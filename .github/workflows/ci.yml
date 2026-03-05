@@ -87,8 +87,10 @@ jobs:
         include:
           - image: fronted
             dockerfile: ./docker/example-services/frontend/Dockerfile
+            context: ./docker/example-services/frontend
           - image: backend
             dockerfile: ./docker/example-services/backend/Dockerfile
+            context: ./docker/example-services/backend
     steps:
       - uses: actions/checkout@v4
 
@@ -115,7 +117,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
