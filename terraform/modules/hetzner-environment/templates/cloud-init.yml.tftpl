@@ -213,8 +213,8 @@ runcmd:
   - chown deploy:deploy /mnt/storage/var
 
   # Create traefik config directory for deploy user
-  - mkdir -p/mnt/storage/app/traefik
-  - chown deploy:deploy/mnt/storage/app/traefik
+  - mkdir -p /mnt/storage/app/traefik
+  - chown deploy:deploy /mnt/storage/app/traefik
 
   # Create ops directory structure
   - mkdir -p /home/ops/.config/borg /home/ops/.ssh /home/ops/logs /home/ops/scripts
