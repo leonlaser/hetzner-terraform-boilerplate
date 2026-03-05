@@ -49,7 +49,7 @@ resource "terraform_data" "db_provisioner" {
   ]
 
   lifecycle {
-    ignore_changes = [input]
+    replace_triggered_by = [hcloud_server.database]
   }
 }
 
@@ -126,6 +126,6 @@ resource "terraform_data" "db_backup_provisioner" {
   depends_on = [terraform_data.db_provisioner]
 
   lifecycle {
-    ignore_changes = [input]
+    replace_triggered_by = [hcloud_server.database]
   }
 }

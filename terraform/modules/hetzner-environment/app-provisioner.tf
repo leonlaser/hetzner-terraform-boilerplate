@@ -66,7 +66,7 @@ resource "terraform_data" "app_provisioner" {
   ]
 
   lifecycle {
-    ignore_changes = [input]
+    replace_triggered_by = [hcloud_server.app]
   }
 }
 
@@ -129,7 +129,7 @@ resource "terraform_data" "app_backup_provisioner" {
   depends_on = [terraform_data.app_provisioner]
 
   lifecycle {
-    ignore_changes = [input]
+    replace_triggered_by = [hcloud_server.app]
   }
 }
 
@@ -165,6 +165,6 @@ resource "terraform_data" "finalize" {
   ]
 
   lifecycle {
-    ignore_changes = [input]
+    replace_triggered_by = [hcloud_server.app]
   }
 }
