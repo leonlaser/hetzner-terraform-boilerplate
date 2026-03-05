@@ -36,12 +36,12 @@ jobs:
 
       - name: Setup SSH
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+          SSH_PRIVATE_KEY: ${{ secrets.APP_DEPLOY_SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ vars.SERVER_IP }} >> ~/.ssh/known_hosts
+          ssh-keyscan -p ${{ vars.APP_SERVER_SSH_PORT }} -H ${{ vars.APP_SERVER_IP }} >> ~/.ssh/known_hosts
 
       - name: Set compose files
         id: compose
@@ -66,13 +66,13 @@ jobs:
 
       - name: Copy compose files
         run: |
-          scp -i ~/.ssh/deploy_key \
+          scp -i ~/.ssh/deploy_key -P ${{ vars.APP_SERVER_SSH_PORT }} \
             docker/compose/_compose.base.yaml \
             docker/compose/compose.prod.yaml \
-            deploy@${{ vars.SERVER_IP }}:/mnt/storage/app/
-          scp -i ~/.ssh/deploy_key \
+            deploy@${{ vars.APP_SERVER_IP }}:/mnt/storage/app/
+          scp -i ~/.ssh/deploy_key -P ${{ vars.APP_SERVER_SSH_PORT }} \
             docker/compose/traefik/traefik.prod.yaml \
-            deploy@${{ vars.SERVER_IP }}:/mnt/storage/app/traefik/
+            deploy@${{ vars.APP_SERVER_IP }}:/mnt/storage/app/traefik/
 
 
       - name: Copy database compose files
