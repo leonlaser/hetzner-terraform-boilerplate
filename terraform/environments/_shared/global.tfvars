@@ -50,7 +50,7 @@ smtp_port = 587
 # =============================================================================
 
 base_env_vars = {
-  APP_SECRET = "APP_SECRET"
+  GLOBAL_VARIABLE = "GLOBAL_VARIABLE"
   DB_PORT = 5432
   DB_HOST = "[REPLACE_ME]"
   DB_NAME = "[REPLACE_ME]"

@@ -1,14 +1,14 @@
-FROM node:alpine
+FROM oven/bun:alpine
 
 WORKDIR /app
 
-COPY --chown=node:node index.js .
+COPY --chown=bun:bun index.js .
 
-USER node
+USER bun
 
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -qO /dev/null http://localhost:3000/ || exit 1
+HEALTHCHECK --interval=2s --timeout=3s --start-period=5s --retries=3 \
+  CMD bun -e "const res = await fetch('http://localhost:3000/api/health'); if (!res.ok) throw new Error();" || exit 1
 
-CMD ["node", "index.js"]
+CMD ["bun", "index.js"]

@@ -5,23 +5,26 @@
     <title>Example Frontend</title>
 </head>
 <body>
-    <h1>API Response</h1>
     <pre><code id="api-output">Loading...</code></pre>
-
     <script>
         const output = document.getElementById('api-output');
         const xhr = new XMLHttpRequest();
         xhr.open('GET', '/api');
         xhr.onload = function() {
-            if (xhr.status === 200) {
-                try {
-                    const data = JSON.parse(xhr.responseText);
-                    output.textContent = JSON.stringify(data, null, 2);
-                } catch (e) {
-                    output.textContent = 'Error parsing JSON: ' + e.message;
+            try {
+                const data = JSON.parse(xhr.responseText);
+                const responseString = JSON.stringify(data, null, 2);
+
+                if (xhr.status === 200) {
+                    output.textContent = 'API Response:\n';
+                } else {
+                    output.textContent = 'Error fetching API: ' + xhr.status + ' ' + xhr.statusText + '\n';
                 }
-            } else {
-                output.textContent = 'Error fetching API: ' + xhr.status + ' ' + xhr.statusText;
+
+                output.textContent += '\n' + responseString;
+
+            } catch (e) {
+                output.textContent = 'Error parsing JSON: ' + e.message;
             }
         };
         xhr.onerror = function() {

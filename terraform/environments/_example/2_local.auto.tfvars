@@ -8,7 +8,7 @@ location = "fsn1"
 
 # Optional: Environment specific variables
 # app_env_vars = {
-#   ENVIRONMENT_SPECIFIC_ENV = "Very specific"
+#   ENVIRONMENT_SPECIFIC_VARIABLE = "Very specific"
 # }
 
 delete_protection = {
