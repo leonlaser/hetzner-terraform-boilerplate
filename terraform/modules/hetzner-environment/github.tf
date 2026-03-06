@@ -14,18 +14,18 @@ resource "github_repository_environment_deployment_policy" "branch" {
   branch_pattern = var.deploy_branch
 }
 
-resource "github_actions_environment_variable" "app_server_ip" {
-  repository    = var.github_repository
-  environment   = github_repository_environment.default.environment
-  variable_name = "APP_SERVER_IP"
-  value         = hcloud_floating_ip.master.ip_address
+resource "github_actions_environment_secret" "app_server_ip" {
+  repository      = var.github_repository
+  environment     = github_repository_environment.default.environment
+  secret_name     = "APP_SERVER_IP"
+  plaintext_value = hcloud_floating_ip.master.ip_address
 }
 
-resource "github_actions_environment_variable" "app_server_ssh_port" {
-  repository    = var.github_repository
-  environment   = github_repository_environment.default.environment
-  variable_name = "APP_SERVER_SSH_PORT"
-  value         = random_integer.app_ssh_port.result
+resource "github_actions_environment_secret" "app_server_ssh_port" {
+  repository      = var.github_repository
+  environment     = github_repository_environment.default.environment
+  secret_name     = "APP_SERVER_SSH_PORT"
+  plaintext_value = random_integer.app_ssh_port.result
 }
 
 resource "github_actions_environment_secret" "app_ssh_deploy_private_key" {
