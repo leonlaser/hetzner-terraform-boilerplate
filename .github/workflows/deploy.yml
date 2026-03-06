@@ -79,8 +79,8 @@ jobs:
         if: vars.DEPLOY_DATABASE_WITH_APP == 'true'
         run: |
           scp -i ~/.ssh/deploy_key -P ${{ vars.APP_SERVER_SSH_PORT }} \
-            infrastructure/docker/_compose.base.db.yaml \
-            infrastructure/docker/compose.prod.db.yaml \
+            docker/compose/_compose.base.db.yaml \
+            docker/compose/compose.prod.db.yaml \
             deploy@${{ vars.APP_SERVER_IP }}:/mnt/storage/app/
 
       - name: Pre-deploy backup
