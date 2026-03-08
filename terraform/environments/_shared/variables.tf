@@ -100,6 +100,11 @@ variable "backup" {
   description = "StorageBox ID for borg backups. Null disables backups."
 }
 
+variable "borg_passphrase" {
+  type      = string
+  sensitive = true
+}
+
 variable "server_type" {
   type    = string
   default = "cx23"

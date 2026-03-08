@@ -1,26 +1,54 @@
 #!/bin/bash
 set -euo pipefail
 
-# Guard: skip if secrets not yet provisioned
-[ -f "$HOME/.config/borg/env" ] || exit 0
+# This script must be run via: sudo borg-backup.sh
+# It sources borg config from the ops user's home directory.
 
-BORG="$HOME/scripts/borg.sh"
+OPS_HOME="/home/ops"
+
+# Guard: skip if secrets not yet provisioned
+[ -f "$OPS_HOME/.config/borg/env" ] || exit 0
+
+# Parse borg env safely — only accept known variables, never execute the file as shell code
+while IFS='=' read -r key value; do
+  value=$(echo "$value" | tr -d '"')
+  case "$key" in
+    BORG_REPO|BORG_PASSPHRASE) export "$key=$value" ;;
+  esac
+done < "$OPS_HOME/.config/borg/env"
+export BORG_RSH="ssh -i $OPS_HOME/.ssh/backup_key -o StrictHostKeyChecking=accept-new"
+
 BACKUP_NAME="$(hostname)-$(date +%Y-%m-%dT%H:%M:%S)"
 BACKUP_PATH="$(readlink -f /mnt/storage)"
-LOG_FILE="$HOME/logs/borg-backup.log"
+LOG_FILE="$OPS_HOME/logs/borg-backup.log"
+PGDUMP_SCRIPT="$OPS_HOME/scripts/pg-dump.sh"
+PGDUMP_DIR="$OPS_HOME/pgdump"
+EXCLUDE_ARGS=""
+EXTRA_PATHS=""
 
 {
   echo "=== Backup started: $(date) ==="
 
+  # Pre-backup hook: pg_dump (if configured)
+  if [ -x "$PGDUMP_SCRIPT" ]; then
+    "$PGDUMP_SCRIPT"
+    EXCLUDE_ARGS="--exclude */var/docker/postgresql"
+    EXTRA_PATHS="$PGDUMP_DIR"
+    echo "  Excluding raw PostgreSQL data directory from borg archive."
+  fi
+
   # Create backup (/mnt/storage is a symlink — resolve to actual mount)
-  $BORG create \
+  borg create \
+    --read-special \
     --compression zstd,3 \
     --exclude '*/lost+found' \
+    $EXCLUDE_ARGS \
     "::$BACKUP_NAME" \
-    "$BACKUP_PATH"
+    "$BACKUP_PATH" \
+    $EXTRA_PATHS
 
   # Prune old backups
-  $BORG prune \
+  borg prune \
     --keep-hourly 48 \
     --keep-daily 7 \
     --keep-weekly 4 \
@@ -28,7 +56,10 @@ LOG_FILE="$HOME/logs/borg-backup.log"
     --keep-yearly 1
 
   # Compact repository
-  $BORG compact
+  borg compact
+
+  # Cleanup pg_dump output
+  [ -d "$PGDUMP_DIR" ] && rm -rf "$PGDUMP_DIR"
 
   echo "=== Backup finished: $(date) ==="
 } >> "$LOG_FILE" 2>&1 || {

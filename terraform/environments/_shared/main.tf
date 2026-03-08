@@ -81,6 +81,7 @@ module "environment" {
   delete_protection     = var.delete_protection
   swap_size             = var.swap_size
   backup                = var.backup
+  borg_passphrase       = var.borg_passphrase
   database              = var.database
   app_env_vars = merge(
     local.dynamic_env_vars,
@@ -107,14 +108,5 @@ output "ssh_port" {
 
 output "traefik_dashboard_password" {
   value     = module.environment.traefik_dashboard_password
-  sensitive = true
-}
-
-output "borg_passphrase" {
-  value     = module.environment.borg_passphrase
-  sensitive = true
-}
-output "db_borg_passphrase" {
-  value     = module.environment.db_borg_passphrase
   sensitive = true
 }

@@ -32,15 +32,3 @@ resource "tls_private_key" "app_backup" {
     ignore_changes = all
   }
 }
-
-resource "random_password" "app_borg_passphrase" {
-  count            = var.backup != null ? 1 : 0
-  length           = 64
-  special          = true
-  override_special = local.safe_special_chars
-
-  # Keep passphrase safe
-  lifecycle {
-    ignore_changes = all
-  }
-}

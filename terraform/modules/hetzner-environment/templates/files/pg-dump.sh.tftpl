@@ -1,0 +1,28 @@
+#!/bin/bash
+set -euo pipefail
+
+DUMP_DIR="/home/ops/pgdump"
+COMPOSE_DIR="${compose_dir}"
+
+echo "  pg_dump started: $(date)"
+
+rm -rf "$DUMP_DIR"
+mkdir -p "$DUMP_DIR"
+
+# pg_dump inside the container in directory format (one file per table)
+# Tar-stream output to local disk (faster than network volume)
+# No volume mount needed — works with any compose setup
+cd $COMPOSE_DIR
+sudo -u deploy docker compose exec -T database bash -c '\
+  rm -rf /tmp/pgdump && \
+  pg_dump \
+    --username="$POSTGRES_USER" \
+    --format=directory \
+    --jobs=2 \
+    --file=/tmp/pgdump \
+    "$POSTGRES_DB" && \
+  tar -C /tmp -cf - pgdump && \
+  rm -rf /tmp/pgdump' \
+  | tar -C "$DUMP_DIR" -xf - --strip-components=1
+
+echo "  pg_dump finished: $(date)"

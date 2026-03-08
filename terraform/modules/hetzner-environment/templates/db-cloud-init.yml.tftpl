@@ -70,7 +70,6 @@ write_files:
 
   # Finish provisioning script (cloud-init clean + reboot)
   - path: /home/ops/scripts/finish-provisioning.sh
-    owner: ops:ops
     permissions: '0755'
     defer: true
     content: |
@@ -96,12 +95,11 @@ write_files:
       deploy:100000:65536
     append: true
 
-  # Sudoers: deploy can trigger backups as ops, ops can run finish-provisioning as root
+  # Sudoers: ops can run privileged scripts as root, ops can switch to deploy
   - path: /etc/sudoers.d/ops
     permissions: '0440'
     content: |
-      deploy ALL=(ops) NOPASSWD: /home/ops/scripts/borg-backup.sh
-      ops ALL=(root) NOPASSWD: /home/ops/scripts/finish-provisioning.sh
+      ops ALL=(root) NOPASSWD: /home/ops/scripts/finish-provisioning.sh, /home/ops/scripts/borg-backup.sh, /home/ops/scripts/borg-restore.sh
       ops ALL=(deploy) NOPASSWD: ALL
 
   # Docker Compose file for running the database
@@ -125,7 +123,6 @@ write_files:
 %{ if backup_enabled }
   # Borg backup script
   - path: /home/ops/scripts/borg-backup.sh
-    owner: ops:ops
     permissions: '0755'
     defer: true
     content: |
@@ -138,6 +135,20 @@ write_files:
     defer: true
     content: |
       ${indent(6, chomp(borg_helper_script))}
+
+  # Borg restore script (extracts archive to /mnt/storage — runs as root via sudo)
+  - path: /home/ops/scripts/borg-restore.sh
+    permissions: '0755'
+    defer: true
+    content: |
+      ${indent(6, chomp(borg_restore_script))}
+
+  # pg_dump script (consistent database dump before borg backup)
+  - path: /home/ops/scripts/pg-dump.sh
+    permissions: '0755'
+    defer: true
+    content: |
+      ${indent(6, chomp(pg_dump_script))}
 %{ endif }
 
 runcmd:
@@ -169,15 +180,16 @@ runcmd:
   # Start Database via Docker Compose
   - su - deploy -c "docker compose up -d"
 
-  # Create ops directory structure
+  # Create ops directory structure (scripts dir is root-owned to prevent privilege escalation)
   - mkdir -p /home/ops/.config/borg /home/ops/.ssh /home/ops/logs /home/ops/scripts
-  - chown -R ops:ops /home/ops/.config /home/ops/.ssh /home/ops/logs /home/ops/scripts
+  - chown -R ops:ops /home/ops/.config /home/ops/.ssh /home/ops/logs
+  - chown root:root /home/ops/scripts
   - chmod 700 /home/ops/.ssh /home/ops/.config/borg
 
   # Cronjobs (ops user)
   - su - ops -c 'echo "0 * * * * /home/ops/scripts/check-reboot-required.sh" | crontab -'
 %{ if backup_enabled }
-  - su - ops -c '(crontab -l; echo "30 * * * * /home/ops/scripts/borg-backup.sh") | crontab -'
+  - su - ops -c '(crontab -l; echo "30 * * * * sudo /home/ops/scripts/borg-backup.sh") | crontab -'
 %{ endif }
 
 apt:

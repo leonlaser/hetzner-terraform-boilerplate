@@ -77,7 +77,7 @@ resource "terraform_data" "app_backup_provisioner" {
   count = var.backup != null ? 1 : 0
 
   input = {
-    borg_passphrase   = random_password.app_borg_passphrase[0].result
+    borg_passphrase   = var.borg_passphrase
     backup_key        = tls_private_key.app_backup[0].private_key_openssh
     storagebox_host   = hcloud_storage_box_subaccount.backup[0].server
     storagebox_user   = hcloud_storage_box_subaccount.backup[0].username
@@ -100,7 +100,7 @@ resource "terraform_data" "app_backup_provisioner" {
       storagebox_host = hcloud_storage_box_subaccount.backup[0].server
       storagebox_user = hcloud_storage_box_subaccount.backup[0].username
       storagebox_path = "./app"
-      borg_passphrase = random_password.app_borg_passphrase[0].result
+      borg_passphrase = var.borg_passphrase
     })
     destination = "/home/ops/.config/borg/env"
   }

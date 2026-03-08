@@ -27,15 +27,3 @@ output "traefik_dashboard_password" {
   sensitive   = true
   description = "Generated Traefik dashboard password (username: admin)"
 }
-
-output "borg_passphrase" {
-  value       = var.backup != null ? random_password.app_borg_passphrase[0].result : null
-  sensitive   = true
-  description = "Borg encryption passphrase — store securely for disaster recovery"
-}
-
-output "db_borg_passphrase" {
-  value       = var.database != null && var.backup != null ? random_password.db_borg_passphrase[0].result : null
-  sensitive   = true
-  description = "DB server Borg encryption passphrase — store securely for disaster recovery"
-}

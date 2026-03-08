@@ -1,6 +1,39 @@
-# Hetzner Infrastructure
+# Hetzner Terraform Boilerplate
 
-Multi-environment OpenTofu setup deploying single-server instances on Hetzner Cloud. Each environment gets its own server(s), floating IP, persistent volume, and GitHub deployment environment.
+A boilerplate for deploying containerized applications on Hetzner Cloud with Docker. It is the result of extracting the most basic parts of multiple production environments.
+
+The aim is to document a basic way of bootstrapping and infrastructure and deploying applications, without introducing more complexity and dependencies than necessary.
+
+## Prerequisites
+
+While the boilerplate should be adapted to your own needs, it is designed to be used with:
+
+- [Hetzner Cloud](https://www.hetzner.com/cloud)
+- [Hetzner S3](https://www.hetzner.com/de/storage/object-storage/) as a Terraform state storage
+- [Hetzner StorageBox](https://www.hetzner.com/de/storage/storage-box/) for storing backups
+- [GitHub](https://github.com/) for CI/CD
+- Any SMTP E-Mail server for sending status emails
+- [OpenTofu](https://opentofu.org/) as a drop-in replacement for `terraform` to make use local state encryption
+- [Docker Compose](https://docs.docker.com/compose/) for configuring and running the application
+- [PostgreSQL](https://www.postgresql.org/) as the application database
+- [Borg](https://www.borgbackup.org/) for automated backups
+- [Traefik](https://github.com/traefik/traefik) as a reverse proxy and for TLS termination
+- Bash for executing the `tf.sh` and `env.sh` helper scripts
+
+#### Disclaimer
+
+While this boilerplate will set up and provision servers with some security aspects in mind, **it does not claim to give you a production-ready and fully hardened setup**.
+
+The boilerplate **does not cover** topics like:
+
+- Centralized logging
+- Monitoring (besides rudimentary status emails for security updates)
+- IDS/IPS (besides a very basic `fail2ban` SSH configuration)
+- Advanced Firewalling (e.g. WAF, DDoS protection)
+- Advanced Network security (e.g. mTLS, VPN)
+- Performance tuning
+- Supply chain security
+- Hardening of the application itself
 
 ## Table of Contents
 
@@ -8,236 +41,29 @@ Multi-environment OpenTofu setup deploying single-server instances on Hetzner Cl
 - [Quick Start](#quick-start)
 - [tf.sh](#tfsh)
 - [Adding New Environment Variables to existing Environments](#adding-new-environment-variables-to-existing-environments)
-  - [Static Environment Variables](#static-environment-variables)
-  - [External Secrets as Environment Variables](#external-secrets-as-environment-variables)
+    - [Static Environment Variables](#static-environment-variables)
+    - [External Secrets as Environment Variables](#external-secrets-as-environment-variables)
 - [Accessing Generated Credentials and Values](#accessing-generated-credentials-and-values)
 - [Providing Secrets](#providing-secrets)
-  - [Shared Secrets for all environments](#shared-secrets-for-all-environments)
-  - [Secrets Per-Environment](#secrets-per-environment)
+    - [Shared Secrets for all environments](#shared-secrets-for-all-environments)
+    - [Secrets Per-Environment](#secrets-per-environment)
 - [Configuration](#configuration)
-  - [Shared Configuration](#shared-configuration)
-  - [Configuration Per-Environment](#configuration-per-environment)
-    - [Dedicated Database Server (Optional)](#dedicated-database-server-optional)
-    - [Delete Protection](#delete-protection)
+    - [Shared Configuration](#shared-configuration)
+    - [Configuration Per-Environment](#configuration-per-environment)
+        - [Dedicated Database Server (Optional)](#dedicated-database-server-optional)
+        - [Delete Protection](#delete-protection)
 - [Creating a New Environment](#creating-a-new-environment)
-  - [Create the Environment Directory](#create-the-environment-directory)
-  - [Setup Checklist](#setup-checklist)
-  - [Deploying a New Environment](#deploying-a-new-environment)
+    - [Create the Environment Directory](#create-the-environment-directory)
+    - [Setup Checklist](#setup-checklist)
+    - [Deploying a New Environment](#deploying-a-new-environment)
 - [Application Server Structure](#application-server-structure)
 - [Backups (Borg + Hetzner StorageBox)](#backups-borg--hetzner-storagebox)
-  - [Borg Helper Script](#borg-helper-script)
-  - [Restoring from a Backup](#restoring-from-a-backup)
+    - [Borg Helper Script](#borg-helper-script)
+    - [PostgreSQL Backups (pg_dump)](#postgresql-backups-pg_dump)
+    - [Restoring from a Backup](#restoring-from-a-backup)
+    - [Disaster Recovery](#disaster-recovery)
 - [Server Replacement Safety](#server-replacement-safety)
 - [Directory Structure](#directory-structure)
-
-## Prerequisites
-
-- [OpenTofu](https://opentofu.org/) >= 1.10
-- A secrets manager with CLI support
-
-## Quick Start
-
-```bash
-# 1. Set up global secrets
-cp env.sh.example env.sh
-# Edit env.sh — wire up your secrets manager
-
-# 2. Setup environment specific secrets
-cp terraform/environments/foobar/env.sh.example terraform/environments/foobar/env.sh
-# Edit environments/foobar/env.sh — wire up your secrets manager
-
-# 3. Initialize the environment
-./tf.sh foobar init
-
-# You are done and can use the environment now:
-./tf.sh foobar plan
-./tf.sh foobar apply
-```
-
-## tf.sh
-
-Wrapper around `tofu` that loads secrets and runs commands for a selected environment:
-
-```bash
-./tf.sh <environment> <command> [args...]
-./tf.sh foobar plan
-./tf.sh foobar apply -auto-approve
-./tf.sh foobar output server_ip
-```
-
-It sources secrets in order: `env.sh` (global) then `terraform/environments/<env>/env.sh`
-(overrides).
-
-## Adding New Environment Variables to existing Environments
-
-### Static Environment Variables
-
-New static values, like port numbers and token TTLs can be added either in
-`terraform/environments/_shared/global.tfvars` in `base_env_vars` for all environments or in
-`terraform/environments/<env>/2_local.auto.tfvars` in `app_env_vars` for a specific environment.
-
-### External Secrets as Environment Variables
-
-If you need to pass API keys, login credentials or other secrets to your application, they need to
-be provided through `env.sh`. For global secrets, use the root `env.sh`, for environment-specific
-secrets, use the environment-specific `terraform/environments/<env>/env.sh`.
-
-- Define a new `TF_VAR_<name>` in `env.sh.example` and in your local `env.sh`
-- Define a new variable in `terraform/environments/_shared/variables.tf`
-- Define a new Environment Variable in either `terraform/environments/_shared/global.tfvars` in
-  `base_env_vars` for all environments or in `terraform/environments/<env>/2_local.auto.tfvars` in
-  `app_env_vars` for a specific environment.
-
-After `./tf.sh apply <env>`, the variable will be available after your next deployment via GitHub.
-
-## Accessing Generated Credentials and Values
-
-Avoid showing secrets in your terminal. Users of macOS can use `pbcopy` to copy the output to the
-clipboard. Users of linux can use `xclip --clipboard --input` or `xsel -selection clipboard`
-instead:
-
-```bash
-./tf.sh foobar output --raw borg_passphrase | pbcopy
-```
-
-Traefik dashboard credentials are auto-generated per environment (username: `admin`):
-
-```bash
-./tf.sh foobar output traefik_dashboard_password
-```
-
-Dynamic SSH Port:
-
-```bash
-./tf.sh foobar output ssh_port
-```
-
-IP addresses:
-
-```bash
-./tf.sh foobar output server_ip
-./tf.sh foobar output server_ip_v6
-```
-
-Borg backup passphrase:
-
-```bash
-./tf.sh foobar output borg_passphrase
-```
-
-Borg database backup passphrase, if enabled:
-
-```bash
-./tf.sh foobar output db_borg_passphrase
-```
-
-## Providing Secrets
-
-### Shared Secrets for all environments
-
-The root `env.sh` contains shared secrets across all environments. Must export:
-
-| Variable                                      | Description                                                |
-| --------------------------------------------- | ---------------------------------------------------------- |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | S3 backend credentials (Hetzner Object Storage)            |
-| `TF_VAR_hcloud_token`                         | Hetzner Cloud API token for the used Hetzner Cloud project |
-| `TF_VAR_github_token`                         | GitHub fine-grained PAT (see `env.sh.example`)             |
-| `TF_VAR_smtp_user` / `TF_VAR_smtp_password`   | SMTP credentials                                           |
-
-### Secrets Per-Environment
-
-Each environment **must** override at minimum in `terraform/environments/<env-name>/env.sh`:
-
-| Variable                             | Description                        |
-| ------------------------------------ | ---------------------------------- |
-| `STATE_PASSPHRASE` + `TF_ENCRYPTION` | Unique state encryption passphrase |
-
-See `terraform/environments/_example/env.sh.example` for the template. If the environment has its
-own Hetzner Cloud project or SMTP server, you can also override these at this level.
-
-## Configuration
-
-### Shared Configuration
-
-Project-wide defaults are stored in `terraform/environments/_shared/global.tfvars`. For example,
-server type, volume size, SSH keys, SMTP config, base app env vars. Symlinked as
-`1_global.auto.tfvars` into each environment.
-
-### Configuration Per-Environment
-
-Environment-specific overrides are stored in
-`terraform/environments/<env-name>/2_local.auto.tfvars`:
-
-```hcl
-domain           = "foobar.example.com"
-environment_name = "foobar"
-deploy_branch    = "foobar"
-
-app_env_vars = {
-  MAIL_FROM   = "info@foobar.example.com"
-  ADMIN_EMAIL = "sysadmin@example.com"
-}
-
-# Optional: Borg backups to Hetzner StorageBox
-backup = {
-  storage_box_id = 123456  # Hetzner Storage Box ID — subaccount is created automatically
-}
-```
-
-You could also override the `admin_ssh_key_names` to narrow down SSH access to certain users
-per environment.
-
-#### Dedicated Database Server (Optional)
-
-By default, PostgreSQL runs as a Docker service on the app server. For production environments, you
-can optionally run PostgreSQL on a dedicated server that is only accessible via the internal
-network.
-
-Benefits:
-
-- Database server can scale independently of the app server
-- Database isolated from public-facing app server (reduced blast radius)
-- Automatic backup when `backup` is set (shared StorageBox subaccount, separate borg repo)
-- DB server has no public IP — only reachable via internal network (`10.0.1.20`)
-
-```hcl
-database = {
-  server_type = "cx32"
-  volume_size = 20
-}
-```
-
-When `database` is set, the app server's `DB_HOST` is automatically overridden to `10.0.1.20`. SSH
-to the DB server via the app server as jump host: `ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20`.
-
-DB backup is automatic when both `backup` and `database` are set — the DB server shares the same
-StorageBox subaccount (separate borg repo at `./db`).
-
-**Post-apply steps (when database is enabled):**
-
-```bash
-# 1. Verify PostgreSQL is running
-ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20 "sudo -iu deploy docker compose ps"
-
-# 2. Save DB borg passphrase for disaster recovery
-./tf.sh prod output -raw db_borg_passphrase
-```
-
-#### Delete Protection
-
-Each environment controls whether critical resources can be destroyed via `delete_protection`. This
-sets both Hetzner's API-level `delete_protection` and OpenTofu's `prevent_destroy` lifecycle rule.
-
-```hcl
-delete_protection = {
-  server      = true   # app server (also enables rebuild_protection)
-  volume      = true   # persistent storage volume
-  floating_ip = true   # IPv4 and IPv6 floating IPs
-}
-```
-
-The variable has no default — every environment must explicitly set it. For production, enable all
-protections. For staging/dev, keep them `false` so you can freely recreate resources.
 
 ## Creating a New Environment
 
@@ -281,15 +107,175 @@ Replace all `[REPLACE_ME]` placeholders in:
 # IMPORTANT: Wait until DNS propagates before deploying your application, as Traefik needs to pull TLS certs.
 ```
 
+## tf.sh
+
+Wrapper around `tofu` that loads secrets and runs commands for a selected environment:
+
+```bash
+./tf.sh <environment> <command> [args...]
+./tf.sh foobar plan
+./tf.sh foobar apply
+./tf.sh foobar output server_ip
+```
+
+## Providing Secrets
+
+### Shared Secrets for all environments
+
+The root `env.sh` contains shared secrets across all environments. Look at `env.sh.example` for the template and adjust which secrets are required for all environments.
+
+The boilerplate assumes you will:
+
+- deploy multiple environments to a single Hetzner Cloud project
+- store your Terraform in a single Hetzner S3 bucket
+- use the same Email server for all environments
+- use the same GitHub PAT for alle environments
+
+### Secrets Per-Environment
+
+Each environment can override ar add environment variables defined in the root `env.sh` by setting those in `terraform/environments/<env-name>/env.sh`.
+
+The boilerplate suggests defining at least `STATE_PASSPHRASE` / `TF_ENCRYPTION` per environment. By doing so, a leaked state passphrase for a staging environment cannot be used to gain access to production secrets.
+
+## Configuration
+
+### Shared Configuration
+
+Project-wide defaults are stored in `terraform/environments/_shared/global.tfvars`. For example, server type, volume size, SSH keys, SMTP config, base app env vars. Symlinked as
+`1_global.auto.tfvars` into each environment.
+
+### Configuration Per-Environment
+
+Environment-specific overrides are stored in
+`terraform/environments/<env-name>/2_local.auto.tfvars`:
+
+```hcl
+domain           = "foobar.example.com"
+environment_name = "foobar"
+deploy_branch    = "foobar"
+
+app_env_vars = {
+  MAIL_FROM   = "info@foobar.example.com"
+  ADMIN_EMAIL = "sysadmin@example.com"
+}
+
+# Optional: Borg backups to Hetzner StorageBox
+backup = {
+  storage_box_id = 123456  # Hetzner Storage Box ID — subaccount is created automatically
+}
+```
+
+All variables set in `terraform/environments/_shared/global.tfvars` can be overidden. For example to set a more cost-efficent `server_type` for a staging environment and a more performant `server_type` for a production environment.
+
+#### Dedicated Database Server (Optional)
+
+By default, PostgreSQL runs as a Docker service on the app server. For production environments, you can optionally run PostgreSQL on a dedicated server that is only accessible via the internal network.
+
+Benefits:
+
+- Database server can scale independently of the app server
+- Database isolated from public-facing app server (reduced blast radius)
+- Automatic backup when `backup` is set (shared StorageBox subaccount, separate borg repo)
+- DB server has no public IP — only reachable via internal network (`10.0.1.20`)
+
+```hcl
+database = {
+  server_type = "cx32"
+  volume_size = 20
+}
+```
+
+When `database` is set, the app server's `DB_HOST` is automatically overridden to `10.0.1.20`. SSH to the DB server via the app server as jump host: `ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20`.
+
+DB backup is automatic when both `backup` and `database` are set — the DB server shares the same StorageBox subaccount (separate borg repo at `./db`).
+
+**Post-apply steps (when database is enabled):**
+
+```bash
+# 1. Verify PostgreSQL is running
+ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20 "sudo -iu deploy docker compose ps"
+
+# 2. Save DB borg passphrase for disaster recovery
+./tf.sh prod output -raw db_borg_passphrase
+```
+
+#### Delete Protection
+
+Each environment controls whether critical resources can be destroyed via `delete_protection`. This sets both Hetzner's API-level `delete_protection` and OpenTofu's `prevent_destroy` lifecycle rule.
+
+```hcl
+delete_protection = {
+  server = true   # app server (also enables rebuild_protection)
+  volume = true   # persistent storage volume
+  floating_ip = true   # IPv4 and IPv6 floating IPs
+}
+```
+
+The variable has no default — every environment must explicitly set it. For production, enable all protections. For staging/dev, keep them `false` so you can freely recreate resources.
+
+## Adding New Environment Variables to existing Environments
+
+### Static Environment Variables
+
+New static values, like port numbers and token TTLs can be added either in
+`terraform/environments/_shared/global.tfvars` in `base_env_vars` for all environments or in
+`terraform/environments/<env>/2_local.auto.tfvars` in `app_env_vars` for a specific environment.
+
+### External Secrets as Environment Variables
+
+If you need to pass API keys, login credentials or other secrets to your application, they need to be provided through `env.sh`. For global secrets, use the root `env.sh`, for environment-specific secrets, use the environment-specific `terraform/environments/<env>/env.sh`.
+
+- Define a new `TF_VAR_<name>` in `env.sh.example` and in your local `env.sh`
+- Define a new variable in `terraform/environments/_shared/variables.tf`
+- Define a new Environment Variable in either `terraform/environments/_shared/global.tfvars` in
+  `base_env_vars` for all environments or in `terraform/environments/<env>/2_local.auto.tfvars` in
+  `app_env_vars` for a specific environment.
+
+After `./tf.sh apply <env>`, the variable will be available after your next deployment via GitHub.
+
+## Accessing Generated Credentials and Values
+
+Avoid showing secrets in your terminal. Users of macOS can use `pbcopy` to copy the output to the clipboard. Users of linux can use `xclip --clipboard --input` or `xsel -selection clipboard`
+instead:
+
+```bash
+./tf.sh foobar output --raw borg_passphrase | pbcopy
+```
+
+Traefik dashboard credentials are auto-generated per environment (username: `admin`):
+
+```bash
+./tf.sh foobar output traefik_dashboard_password
+```
+
+Dynamic SSH Port:
+
+```bash
+./tf.sh foobar output ssh_port
+```
+
+IP addresses:
+
+```bash
+./tf.sh foobar output server_ip
+./tf.sh foobar output server_ip_v6
+```
+
+Borg backup passphrase:
+
+```bash
+./tf.sh foobar output borg_passphrase
+```
+
 ## Application Server Structure
 
 Three users with distinct roles:
 
-| User | Purpose | SSH access |
-|------|---------|------------|
-| **ops** | Admin SSH, backups, monitoring | Admin SSH keys (Hetzner project) |
-| **deploy** | Docker, app deployment | Deploy key (CI/CD only) |
-| **root** | System services only | Disabled (`PermitRootLogin no`) |
+| User       | Purpose                        | SSH access                       |
+|------------|--------------------------------|----------------------------------|
+| **ops**    | Admin SSH, backups, monitoring | Admin SSH keys (Hetzner project) |
+| **deploy** | Docker, app deployment         | Deploy key (CI/CD only)          |
+| **root**   | System services only           | Disabled (`PermitRootLogin no`)  |
 
 - Authorized developers login via their SSH keys as `ops`
 - Switch to deploy user via `sudo -iu deploy` (login shell with Docker env)
@@ -300,15 +286,13 @@ Three users with distinct roles:
 
 ## Backups (Borg + Hetzner StorageBox)
 
-Setting the `backup` variable enables automated Borg backups of `/mnt/storage` (PostgreSQL, Docker
-volumes, certs).
+Setting the `backup` variable enables automated Borg backups of `/mnt/storage`. When a PostgreSQL database is present (dedicated DB server or app-local), `pg_dump` runs automatically before Borg to create a consistent dump. The raw PostgreSQL data directory is excluded from the archive — only the dump is backed up.
 
 **Retention:** 48 hourly, 7 daily, 4 weekly, 6 monthly, 1 yearly.
 
 Runs every hour via the `ops` user's crontab. Emails on failure.
 
-SSH key installation on the StorageBox and borg repository initialization happen automatically via
-Terraform provisioners after cloud-init completes.
+SSH key installation on the StorageBox and borg repository initialization happen automatically via Terraform provisioners after cloud-init completes.
 
 **After deploying the server for the first time, verify that backups are working:**
 
@@ -316,7 +300,7 @@ Terraform provisioners after cloud-init completes.
 # 1. Login as ops
 ssh ops@<foobar-ip> -p <foobar-ssh-port>
 # 2. Execute the backup script
-~/scripts/borg-backup.sh
+sudo ~/scripts/borg-backup.sh
 # 3. Verify the logs show no errors
 cat ~/logs/borg-backup.log
 
@@ -334,8 +318,7 @@ Each environment gets its own StorageBox **subaccount** (created automatically),
 ### Borg Helper Script
 
 Every server with backups enabled gets `~/scripts/borg.sh` (owned by `ops`) — a wrapper that sets
-`BORG_REPO`, `BORG_PASSPHRASE`, and `BORG_RSH`, then passes all arguments to `borg`. This avoids
-having to export environment variables manually when interacting with borg:
+`BORG_REPO`, `BORG_PASSPHRASE`, and `BORG_RSH`, then passes all arguments to `borg`. This avoids having to export environment variables manually when interacting with borg:
 
 ```bash
 # Login as ops
@@ -347,20 +330,48 @@ ssh ops@<foobar-ip> -p <foobar-ssh-port>
 # Show details of a specific archive
 ~/scripts/borg.sh info ::archive-name
 
-# Extract a file from an archive
-~/scripts/borg.sh extract ::archive-name path/to/file
-
 # Any borg command works
 ~/scripts/borg.sh <command> [args...]
 ```
 
-The automated backup script (`borg-backup.sh`) and the provisioner's `borg init` both use this
-helper internally.
+The automated backup script (`borg-backup.sh`) and the provisioner's `borg init` both use this helper internally.
+
+> **Note:** For extracting archives, use `sudo ~/scripts/borg-restore.sh` instead of `borg.sh extract`.
+> The restore script runs as root via sudo, which is required to write to `deploy`-owned directories
+> on the volume and to restore correct file ownership.
+
+### PostgreSQL Backups (pg_dump)
+
+When backups are enabled and a PostgreSQL database is present, a `pg-dump.sh` script is deployed alongside the Borg backup scripts. It runs automatically as a pre-backup hook. `borg-backup.sh`
+checks for an executable `~/scripts/pg-dump.sh` and calls it before creating the archive.
+
+**How it works:**
+
+1. `pg-dump.sh` runs `pg_dump --format=directory` inside the database container
+2. The dump is tar-streamed to `/home/ops/pgdump/` on local disk
+3. Borg archives the dump directory and excludes the raw PostgreSQL data directory (`*/var/docker/postgresql`)
+4. After Borg completes, the dump is cleaned up
+
+**Borg incremental efficiency:** The directory format creates one file per table. Between hourly backups, only tables with changed data produce different files. Borg's content-defined chunking deduplicates unchanged table files — much more efficient than backing up the raw data directory where WAL files change constantly.
+
+**Per-table restore:** The directory format supports selective restore. Use `pg_restore --list` to inspect the dump contents and `pg_restore --table=X` to restore individual tables.
+
+**Dedicated DB server (`database` is set):** Works automatically — `pg-dump.sh` is deployed with
+`compose_dir=/home/deploy` pointing to the DB server's Docker Compose file.
+
+**App server with local DB (`database` is not set):** `pg-dump.sh` is deployed with
+`compose_dir=/mnt/storage/app`. Your Docker Compose file must name the PostgreSQL service
+`database` (matching the boilerplate convention). Until the first CI/CD deployment, `pg-dump.sh`
+will fail (no compose file yet), which aborts the backup and sends an alert email — this is expected and resolves after the first deployment.
+
+**If `pg-dump.sh` fails** (database not running, disk full, etc.), the backup is aborted and an alert email is sent. This is intentional — a failed dump means no consistent backup is possible.
 
 ### Restoring from a Backup
 
-Backups only cover `/mnt/storage` (application data, compose files, database volumes). Docker images
-live on the server's local disk and are not affected by a restore — no need to re-pull them.
+Backups cover `/mnt/storage` (application data, compose files, Docker volumes) plus `pg_dump` output
+(if a database is present). Docker images live on the server's local disk and are not affected by a restore — no need to re-pull them.
+
+#### Get backup files and database dump
 
 ```bash
 # 1. SSH into the server as ops
@@ -373,62 +384,98 @@ ssh ops@<foobar-ip> -p <foobar-ssh-port>
 ~/scripts/borg.sh list ::<archive-name>
 
 # 4. Stop the running application
-sudo -iu deploy bash -c "cd /mnt/storage/app && docker compose down"
+cd /mnt/storage/app
+sudo -u deploy docker compose down
 
 # 5. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
-~/scripts/borg-backup.sh
+sudo ~/scripts/borg-backup.sh
 
-# 6. Restore — extract the archive over the existing data
-cd / # <- THIS IS IMPORTANT! Because the path in the backup archive is absolute
-~/scripts/borg.sh extract ::<archive-name>
+# 6. Extract the archive over the existing data
+sudo ~/scripts/borg-restore.sh ::<archive-name>
 
 # 7. Start the application again
-sudo -iu deploy bash -c "cd /mnt/storage/app && docker compose up -d"
+cd /mnt/storage/app
+sudo -u deploy docker compose up -d
 ```
 
-> **Note:** After server recreation (new server = empty disk), trigger a re-deployment from CI to
-> pull fresh images.
+> **Note:** After server recreation (new server = empty disk), trigger a re-deployment from CI to pull the necessary docker images. The image tag you need to deploy for the restored backup is available in the restored `.env` file.
 
-To restore only specific files or directories (e.g., just the database volume):
+#### Restoring only specific files or directories
+
+Use `~/scripts/borg.sh list ::<archive-name>` to see the exact paths, then extract only what you need:
 
 ```bash
-cd /
-~/scripts/borg.sh extract ::<archive-name> mnt/HC_Volume_<id>/db
+sudo ~/scripts/borg-restore.sh ::<archive-name> mnt/HC_Volume_<id>/var/docker/letsencrypt
 ```
 
-Note: Paths inside borg archives are relative (no leading `/`). Since the backup resolves the
-`/mnt/storage` symlink, paths use the actual volume mount `mnt/HC_Volume_<id>/`. Use
-`~/scripts/borg.sh list ::<archive-name>` to see the exact paths.
+#### Restoring the PostgreSQL dump from a borg archive
 
-**If the database server is separate**, restore it the same way via the app server as jump host:
+The `pg_dump` output is stored at `home/ops/pgdump/` in the archive (relative path, on local disk). The same procedure applies for both dedicated DB servers and app servers with a local database.
+
+```bash
+# 1. List all available backups to select what want to restore
+sudo ~/scripts/borg-restore.sh
+
+# 2. Extract the pg_dump from the archive
+#    If you already extracted the whole archive, you can skip this
+sudo ~/scripts/borg-restore.sh ::<archive-name> home/ops/pgdump
+
+# 2. Copy the database dump into the container and ...
+cd /mnt/storage/app # `cd /home/deploy` if you logged into the dedicated database server 
+sudo -u deploy docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && mkdir -p /tmp/pgdump'
+tar cf - -C /home/ops/pgdump . | sudo -u deploy docker compose exec -T database bash -c 'tar xf - -C /tmp/pgdump'
+
+# ... restore the full database
+sudo -u deploy docker compose exec -T database bash -c 'pg_restore \
+  --clean --if-exists --jobs=2 \
+  --dbname="$POSTGRES_DB" --username="$POSTGRES_USER" \
+  /tmp/pgdump'
+
+# ... restore a single table
+sudo -u deploy docker compose exec database pg_restore --list /tmp/pgdump | grep 'TABLE DATA'
+sudo -u deploy docker compose exec -T database bash -c 'pg_restore\
+  --dbname="$POSTGRES_DB" --username="$POSTGRES_USER" \
+  --table=<table-name> --clean \
+  /tmp/pgdump'
+
+# 3. Cleanup
+rm -rf /home/ops/pgdump
+sudo -iu deploy docker compose exec database rm -rf /tmp/pgdump
+```
+
+**If the database server is separate**, you can restore it the same way via the app server as jump host. There is only one difference:
+Instead of changing directory to `/mnt/storage/app` you need to change to `/home/deploy`.
 
 ```bash
 # Connect directly to the database server
 ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20
-
-# On the database server:
-sudo -iu deploy bash -c "docker compose down"
-~/scripts/borg-backup.sh
-cd /
-~/scripts/borg.sh extract ::<archive-name>
-sudo -iu deploy bash -c "docker compose up -d"
 ```
+
+### Disaster Recovery
+
+Full recovery procedure after server loss:
+
+1. Provision new server(s)
+  ```bash
+  ./tf.sh <env> apply
+  ```
+2. Wait for the server(s) to be setup and ready
+3. Follow the [restore procedure](#restoring-from-a-backup) for the app server and optionally for the dedicated database server
+4. Verify that the database is available:
+  ```bash
+  cd /mnt/storage/app # or cd /home/deploy
+  sudo -u deploy docker compose exec -T database bash -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB" -c "\dt"'
+  ```
+5. Cleanup backups
+  ```bash
+  rm -rf /home/ops/pgdump
+  cd /mnt/storage/app # or cd /home/deploy
+  sudo -u deploy docker compose exec database rm -rf /tmp/pgdump
+  ```
 
 ## Server Replacement Safety
 
-When changing `server_type` or `location`, the module protects against data corruption and
-misconfiguration:
-
-- **Precondition check:** Before destroying the existing server, OpenTofu verifies that the
-  requested server type is available and not deprecated at the target location. This catches
-  misconfigurations early without touching the existing server.
-- **Destroy-then-create (default):** The old server is fully stopped before the volume is detached
-  and reattached to the new server. This avoids data corruption from in-flight Docker writes during
-  a volume swap. There is a brief downtime window, but server type changes are rare and planned.
-
-On boot, Docker Compose services restart automatically via `restart: always` in the production
-compose files, if a deployment has happened before. If the server been replaced, you need to
-manually deploy the application again, so it can pull the necessary Docker images.
+When changing `server_type` or `location`, the module protects against data corruption and misconfiguration. Before destroying the existing server, OpenTofu verifies that the requested server type is available and not deprecated at the target location.
 
 ## Directory Structure
 

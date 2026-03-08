@@ -19,6 +19,8 @@ services:
       traefik.http.routers.backend.entrypoints: web
 
   database:
+    ports:
+      - '5432:5432'
     volumes:
       - db-data:/var/lib/postgresql
 
