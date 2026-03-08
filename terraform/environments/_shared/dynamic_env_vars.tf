@@ -5,7 +5,7 @@ locals {
   safe_special_chars = "-_=^~."
 }
 
-resource "random_string" "database_password" {
+resource "random_password" "database_password" {
   length           = 64
   special          = true
   override_special = local.safe_special_chars
