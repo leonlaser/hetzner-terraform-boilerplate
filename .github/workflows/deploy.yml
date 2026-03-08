@@ -59,7 +59,7 @@ jobs:
           printf 'COMPOSE_FILE=%s\n' "${{ steps.compose.outputs.files }}" >> .env.tmp
           scp -i ~/.ssh/deploy_key -P ${{ secrets.APP_SERVER_SSH_PORT }} \
             .env.tmp \
-            deploy@${{ secrets.APP_SERVER_IP }}:/mnt/storage/app/.env
+            app@${{ secrets.APP_SERVER_IP }}:/home/app/.env
           rm .env.tmp
         env:
           APP_ENV: ${{ secrets.APP_ENV }}
@@ -69,10 +69,10 @@ jobs:
           scp -i ~/.ssh/deploy_key -P ${{ secrets.APP_SERVER_SSH_PORT }} \
             docker/compose/_compose.base.app.yaml \
             docker/compose/compose.prod.app.yaml \
-            deploy@${{ secrets.APP_SERVER_IP }}:/mnt/storage/app/
+            app@${{ secrets.APP_SERVER_IP }}:/home/app/
           scp -i ~/.ssh/deploy_key -P ${{ secrets.APP_SERVER_SSH_PORT }} \
             docker/compose/traefik/traefik.prod.yaml \
-            deploy@${{ secrets.APP_SERVER_IP }}:/mnt/storage/app/traefik/
+            app@${{ secrets.APP_SERVER_IP }}:/home/app/traefik/
 
 
       - name: Copy database compose files
@@ -81,18 +81,17 @@ jobs:
           scp -i ~/.ssh/deploy_key -P ${{ secrets.APP_SERVER_SSH_PORT }} \
             docker/compose/_compose.base.db.yaml \
             docker/compose/compose.prod.db.yaml \
-            deploy@${{ secrets.APP_SERVER_IP }}:/mnt/storage/app/
+            app@${{ secrets.APP_SERVER_IP }}:/home/app/
 
       - name: Pre-deploy backup
         if: vars.BACKUP_ENABLED == 'true'
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${{ secrets.APP_SERVER_SSH_PORT }} deploy@${{ secrets.APP_SERVER_IP }} \
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.APP_SERVER_SSH_PORT }} app@${{ secrets.APP_SERVER_IP }} \
             "sudo -u ops /home/ops/scripts/pre-deploy-backup.sh"
           
       - name: Deploy
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${{ secrets.APP_SERVER_SSH_PORT }} deploy@${{ secrets.APP_SERVER_IP }} \
-            "cd /mnt/storage/app && \
-             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ${{ vars.DOCKER_REGISTRY }} -u ${{ github.actor }} --password-stdin && \
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.APP_SERVER_SSH_PORT }} app@${{ secrets.APP_SERVER_IP }} \
+            "echo '${{ secrets.GITHUB_TOKEN }}' | docker login ${{ vars.DOCKER_REGISTRY }} -u ${{ github.actor }} --password-stdin && \
              docker compose pull && \
              docker compose up -d --remove-orphans"

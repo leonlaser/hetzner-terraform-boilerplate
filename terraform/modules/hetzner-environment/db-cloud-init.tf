@@ -43,9 +43,7 @@ locals {
 
     borg_restore_script = var.backup != null ? file("${path.module}/templates/files/borg-restore.sh.tftpl") : ""
 
-    pg_dump_script = var.backup != null ? templatefile("${path.module}/templates/files/pg-dump.sh.tftpl", {
-      compose_dir = "/home/deploy"
-    }) : ""
+    pg_dump_script = var.backup != null ? file("${path.module}/templates/files/pg-dump.sh.tftpl") : ""
 
     finish_provisioning_script = templatefile("${path.module}/templates/files/finish-provisioning.sh.tftpl", {
       database_ip = ""

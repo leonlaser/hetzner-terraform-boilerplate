@@ -1,7 +1,7 @@
 #cloud-config
 users:
-  # Deployment User (UID 1000 — must be first for rootless Docker)
-  - name: deploy
+  # App User (UID 1000 — must be first for rootless Docker)
+  - name: app
     groups: users
     shell: /bin/bash
     ssh_authorized_keys:
@@ -87,32 +87,40 @@ write_files:
   # prepare subuid/subgid for rootless Docker
   - path: /etc/subuid
     content: |
-      deploy:100000:65536
+      app:100000:65536
     append: true
 
   - path: /etc/subgid
     content: |
-      deploy:100000:65536
+      app:100000:65536
     append: true
 
-  # Sudoers: ops can run privileged scripts as root, ops can switch to deploy
+  # Shortcut: `app` switches to app user with login shell
+  - path: /home/ops/.bash_aliases
+    owner: ops:ops
+    permissions: '0644'
+    defer: true
+    content: |
+      app() { sudo -iu app "$@"; }
+
+  # Sudoers: ops can run privileged scripts as root, ops can switch to app
   - path: /etc/sudoers.d/ops
     permissions: '0440'
     content: |
       ops ALL=(root) NOPASSWD: /home/ops/scripts/finish-provisioning.sh, /home/ops/scripts/borg-backup.sh, /home/ops/scripts/borg-restore.sh
-      ops ALL=(deploy) NOPASSWD: ALL
+      ops ALL=(app) NOPASSWD: ALL
 
   # Docker Compose file for running the database
-  - path: /home/deploy/compose.yml
+  - path: /home/app/compose.yml
     permissions: '0644'
-    owner: deploy:deploy
+    owner: app:app
     defer: true
     content: |
       ${indent(6, chomp(docker_compose_config))}
 
   # Rootless Docker env — sourced by .profile and .bashrc (see runcmd)
-  - path: /home/deploy/.docker-env
-    owner: deploy:deploy
+  - path: /home/app/.docker-env
+    owner: app:app
     permissions: '0644'
     defer: true
     content: |
@@ -161,24 +169,24 @@ runcmd:
   ## Remove rootful Docker
   - systemctl disable --now docker.service docker.socket
   - rm /var/run/docker.sock
-  # Install and run Docker as user "deploy"
-  - su - deploy -c "dockerd-rootless-setuptool.sh install"
+  # Install and run Docker as user "app"
+  - su - app -c "dockerd-rootless-setuptool.sh install"
   ## Enable Docker service
-  - su - deploy -c "systemctl --user enable docker"
-  ## Make "deploy" user linger around, so the daemon can start without a login
-  - loginctl enable-linger deploy
+  - su - app -c "systemctl --user enable docker"
+  ## Make "app" user linger around, so the daemon can start without a login
+  - loginctl enable-linger app
 
   ## Source rootless Docker env from both .profile (login shells) and .bashrc (interactive non-login shells)
-  - echo '. ~/.docker-env' >> /home/deploy/.profile
-  - echo '. ~/.docker-env' >> /home/deploy/.bashrc
+  - echo '. ~/.docker-env' >> /home/app/.profile
+  - echo '. ~/.docker-env' >> /home/app/.bashrc
 
   # Symlink Hetzner volume automount to /mnt/storage
   - ln -sfn /mnt/HC_Volume_${volume_id} /mnt/storage
   - mkdir -p /mnt/storage/var
-  - chown deploy:deploy /mnt/storage/var
+  - chown app:app /mnt/storage/var
 
   # Start Database via Docker Compose
-  - su - deploy -c "docker compose up -d"
+  - su - app -c "docker compose up -d"
 
   # Create ops directory structure (scripts dir is root-owned to prevent privilege escalation)
   - mkdir -p /home/ops/.config/borg /home/ops/.ssh /home/ops/logs /home/ops/scripts

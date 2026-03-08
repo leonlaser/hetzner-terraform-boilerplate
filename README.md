@@ -193,10 +193,10 @@ DB backup is automatic when both `backup` and `database` are set — the DB serv
 
 ```bash
 # 1. Verify PostgreSQL is running
-ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20 "sudo -iu deploy docker compose ps"
+ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20 "sudo -iu app docker compose ps"
 
 # 2. Save DB borg passphrase for disaster recovery
-./tf.sh prod output -raw db_borg_passphrase
+./tf.sh prod output -raw borg_passphrase
 ```
 
 #### Delete Protection
@@ -274,19 +274,19 @@ Three users with distinct roles:
 | User       | Purpose                        | SSH access                       |
 |------------|--------------------------------|----------------------------------|
 | **ops**    | Admin SSH, backups, monitoring | Admin SSH keys (Hetzner project) |
-| **deploy** | Docker, app deployment         | Deploy key (CI/CD only)          |
+| **app**    | Docker, app runtime            | Deploy key (CI/CD only)          |
 | **root**   | System services only           | Disabled (`PermitRootLogin no`)  |
 
 - Authorized developers login via their SSH keys as `ops`
-- Switch to deploy user via `sudo -iu deploy` (login shell with Docker env)
+- The `app` shell function (defined in `~/.bash_aliases`) switches to the app user with a login shell: `app` opens an interactive session, `app docker compose ps` runs a single command. It is a shortcut for `sudo -iu app`.
 - Secrets are **not** in cloud-init — they are pushed via Terraform provisioners after cloud-init completes
 - Backups, monitoring scripts, and crontabs are owned by `ops` under `~/scripts/` and `~/logs/`
 - The Hetzner volume is mounted at `/mnt/storage`
-- Docker Compose configuration and `.env` is deployed to `/mnt/storage/app`
+- Docker Compose configuration and `.env` is deployed to `/home/app`
 
 ## Backups (Borg + Hetzner StorageBox)
 
-Setting the `backup` variable enables automated Borg backups of `/mnt/storage`. When a PostgreSQL database is present (dedicated DB server or app-local), `pg_dump` runs automatically before Borg to create a consistent dump. The raw PostgreSQL data directory is excluded from the archive — only the dump is backed up.
+Setting the `backup` variable enables automated Borg backups of `/mnt/storage` and `/home/app`. When a PostgreSQL database is present (dedicated DB server or app-local), `pg_dump` runs automatically before Borg to create a consistent dump. The raw PostgreSQL data directory is excluded from the archive — only the dump is backed up.
 
 **Retention:** 48 hourly, 7 daily, 4 weekly, 6 monthly, 1 yearly.
 
@@ -337,7 +337,7 @@ ssh ops@<foobar-ip> -p <foobar-ssh-port>
 The automated backup script (`borg-backup.sh`) and the provisioner's `borg init` both use this helper internally.
 
 > **Note:** For extracting archives, use `sudo ~/scripts/borg-restore.sh` instead of `borg.sh extract`.
-> The restore script runs as root via sudo, which is required to write to `deploy`-owned directories
+> The restore script runs as root via sudo, which is required to write to `app`-owned directories
 > on the volume and to restore correct file ownership.
 
 ### PostgreSQL Backups (pg_dump)
@@ -356,19 +356,19 @@ checks for an executable `~/scripts/pg-dump.sh` and calls it before creating the
 
 **Per-table restore:** The directory format supports selective restore. Use `pg_restore --list` to inspect the dump contents and `pg_restore --table=X` to restore individual tables.
 
-**Dedicated DB server (`database` is set):** Works automatically — `pg-dump.sh` is deployed with
-`compose_dir=/home/deploy` pointing to the DB server's Docker Compose file.
+**Dedicated DB server (`database` is set):** Works automatically — `pg-dump.sh` runs against the
+Docker Compose file at `/home/app`.
 
-**App server with local DB (`database` is not set):** `pg-dump.sh` is deployed with
-`compose_dir=/mnt/storage/app`. Your Docker Compose file must name the PostgreSQL service
-`database` (matching the boilerplate convention). Until the first CI/CD deployment, `pg-dump.sh`
-will fail (no compose file yet), which aborts the backup and sends an alert email — this is expected and resolves after the first deployment.
+**App server with local DB (`database` is not set):** Your Docker Compose file must name the
+PostgreSQL service `database` (matching the boilerplate convention). Until the first CI/CD
+deployment, `pg-dump.sh` will fail (no compose file yet), which aborts the backup and sends an
+alert email — this is expected and resolves after the first deployment.
 
 **If `pg-dump.sh` fails** (database not running, disk full, etc.), the backup is aborted and an alert email is sent. This is intentional — a failed dump means no consistent backup is possible.
 
 ### Restoring from a Backup
 
-Backups cover `/mnt/storage` (application data, compose files, Docker volumes) plus `pg_dump` output
+Backups cover `/mnt/storage` (Docker volumes, persistent data) and `/home/app` (compose files, `.env`) plus `pg_dump` output
 (if a database is present). Docker images live on the server's local disk and are not affected by a restore — no need to re-pull them.
 
 #### Get backup files and database dump
@@ -384,8 +384,7 @@ ssh ops@<foobar-ip> -p <foobar-ssh-port>
 ~/scripts/borg.sh list ::<archive-name>
 
 # 4. Stop the running application
-cd /mnt/storage/app
-sudo -u deploy docker compose down
+app docker compose down
 
 # 5. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
 sudo ~/scripts/borg-backup.sh
@@ -394,8 +393,7 @@ sudo ~/scripts/borg-backup.sh
 sudo ~/scripts/borg-restore.sh ::<archive-name>
 
 # 7. Start the application again
-cd /mnt/storage/app
-sudo -u deploy docker compose up -d
+app docker compose up -d
 ```
 
 > **Note:** After server recreation (new server = empty disk), trigger a re-deployment from CI to pull the necessary docker images. The image tag you need to deploy for the restored backup is available in the restored `.env` file.
@@ -421,30 +419,28 @@ sudo ~/scripts/borg-restore.sh
 sudo ~/scripts/borg-restore.sh ::<archive-name> home/ops/pgdump
 
 # 2. Copy the database dump into the container and ...
-cd /mnt/storage/app # `cd /home/deploy` if you logged into the dedicated database server 
-sudo -u deploy docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && mkdir -p /tmp/pgdump'
-tar cf - -C /home/ops/pgdump . | sudo -u deploy docker compose exec -T database bash -c 'tar xf - -C /tmp/pgdump'
+app docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && mkdir -p /tmp/pgdump'
+tar cf - -C /home/ops/pgdump . | app docker compose exec -T database bash -c 'tar xf - -C /tmp/pgdump'
 
 # ... restore the full database
-sudo -u deploy docker compose exec -T database bash -c 'pg_restore \
+app docker compose exec -T database bash -c 'pg_restore \
   --clean --if-exists --jobs=2 \
   --dbname="$POSTGRES_DB" --username="$POSTGRES_USER" \
   /tmp/pgdump'
 
 # ... restore a single table
-sudo -u deploy docker compose exec database pg_restore --list /tmp/pgdump | grep 'TABLE DATA'
-sudo -u deploy docker compose exec -T database bash -c 'pg_restore\
+app docker compose exec database pg_restore --list /tmp/pgdump | grep 'TABLE DATA'
+app docker compose exec -T database bash -c 'pg_restore\
   --dbname="$POSTGRES_DB" --username="$POSTGRES_USER" \
   --table=<table-name> --clean \
   /tmp/pgdump'
 
 # 3. Cleanup
 rm -rf /home/ops/pgdump
-sudo -iu deploy docker compose exec database rm -rf /tmp/pgdump
+app docker compose exec database rm -rf /tmp/pgdump
 ```
 
-**If the database server is separate**, you can restore it the same way via the app server as jump host. There is only one difference:
-Instead of changing directory to `/mnt/storage/app` you need to change to `/home/deploy`.
+**If the database server is separate**, you can restore it the same way via the app server as jump host:
 
 ```bash
 # Connect directly to the database server
@@ -463,14 +459,12 @@ Full recovery procedure after server loss:
 3. Follow the [restore procedure](#restoring-from-a-backup) for the app server and optionally for the dedicated database server
 4. Verify that the database is available:
   ```bash
-  cd /mnt/storage/app # or cd /home/deploy
-  sudo -u deploy docker compose exec -T database bash -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB" -c "\dt"'
+  app docker compose exec -T database bash -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB" -c "\dt"'
   ```
 5. Cleanup backups
   ```bash
   rm -rf /home/ops/pgdump
-  cd /mnt/storage/app # or cd /home/deploy
-  sudo -u deploy docker compose exec database rm -rf /tmp/pgdump
+  app docker compose exec database rm -rf /tmp/pgdump
   ```
 
 ## Server Replacement Safety

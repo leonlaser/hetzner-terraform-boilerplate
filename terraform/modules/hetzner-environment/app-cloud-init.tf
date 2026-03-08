@@ -44,9 +44,7 @@ locals {
 
     borg_restore_script = var.backup != null ? file("${path.module}/templates/files/borg-restore.sh.tftpl") : ""
 
-    pg_dump_script = var.database == null && var.backup != null ? templatefile("${path.module}/templates/files/pg-dump.sh.tftpl", {
-      compose_dir = "/mnt/storage/app"
-    }) : ""
+    pg_dump_script = var.database == null && var.backup != null ? file("${path.module}/templates/files/pg-dump.sh.tftpl") : ""
 
     pre_deploy_backup_script = var.backup != null ? templatefile("${path.module}/templates/files/pre-deploy-backup.sh.tftpl", {
       database_ip = var.database != null ? local.internal_ips.database : ""
