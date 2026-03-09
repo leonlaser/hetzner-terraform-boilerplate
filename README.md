@@ -42,12 +42,11 @@ The boilerplate **does not cover** topics like:
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
+- [Creating a New Environment](#creating-a-new-environment)
+    - [Create the Environment Directory](#create-the-environment-directory)
+    - [Setup Checklist](#setup-checklist)
+    - [Deploying a New Environment](#deploying-a-new-environment)
 - [tf.sh](#tfsh)
-- [Adding New Environment Variables to existing Environments](#adding-new-environment-variables-to-existing-environments)
-    - [Static Environment Variables](#static-environment-variables)
-    - [External Secrets as Environment Variables](#external-secrets-as-environment-variables)
-- [Accessing Generated Credentials and Values](#accessing-generated-credentials-and-values)
 - [Providing Secrets](#providing-secrets)
     - [Shared Secrets for all environments](#shared-secrets-for-all-environments)
     - [Secrets Per-Environment](#secrets-per-environment)
@@ -56,10 +55,10 @@ The boilerplate **does not cover** topics like:
     - [Configuration Per-Environment](#configuration-per-environment)
         - [Dedicated Database Server (Optional)](#dedicated-database-server-optional)
         - [Delete Protection](#delete-protection)
-- [Creating a New Environment](#creating-a-new-environment)
-    - [Create the Environment Directory](#create-the-environment-directory)
-    - [Setup Checklist](#setup-checklist)
-    - [Deploying a New Environment](#deploying-a-new-environment)
+- [Adding New Environment Variables to existing Environments](#adding-new-environment-variables-to-existing-environments)
+    - [Static Environment Variables](#static-environment-variables)
+    - [External Secrets as Environment Variables](#external-secrets-as-environment-variables)
+- [Accessing Generated Credentials and Values](#accessing-generated-credentials-and-values)
 - [Application Server Structure](#application-server-structure)
 - [Backups (Borg + Hetzner StorageBox)](#backups-borg--hetzner-storagebox)
     - [Borg Helper Script](#borg-helper-script)
@@ -133,11 +132,11 @@ The boilerplate assumes you will:
 - deploy multiple environments to a single Hetzner Cloud project
 - store your Terraform in a single Hetzner S3 bucket
 - use the same Email server for all environments
-- use the same GitHub PAT for alle environments
+- use the same GitHub PAT for all environments
 
 ### Secrets Per-Environment
 
-Each environment can override ar add environment variables defined in the root `env.sh` by setting those in `terraform/environments/<env-name>/env.sh`.
+Each environment can override or add environment variables defined in the root `env.sh` by setting those in `terraform/environments/<env-name>/env.sh`.
 
 The boilerplate suggests defining at least `STATE_PASSPHRASE` / `TF_ENCRYPTION` per environment. By doing so, a leaked state passphrase for a staging environment cannot be used to gain access to production secrets.
 
@@ -169,7 +168,7 @@ backup = {
 }
 ```
 
-All variables set in `terraform/environments/_shared/global.tfvars` can be overidden. For example to set a more cost-efficent `server_type` for a staging environment and a more performant `server_type` for a production environment.
+All variables set in `terraform/environments/_shared/global.tfvars` can be overridden. For example to set a more cost-efficient `server_type` for a staging environment and a more performant `server_type` for a production environment.
 
 #### Dedicated Database Server (Optional)
 
@@ -288,7 +287,7 @@ Setting the `backup` variable enables automated Borg backups of `/home/app/curre
 
 **Retention:** 48 hourly, 7 daily, 4 weekly, 6 monthly, 1 yearly.
 
-Runs every hour via the `ops` user's crontab. Emails on failure.
+Runs every hour via the `ops` user's crontab. Emails on failure. To temporarily pause automatic backups (e.g. during a restore), create `~/.backup-paused`. The backup script will skip and send a notification email until the file is removed.
 
 SSH key installation on the StorageBox and borg repository initialization happen automatically via Terraform provisioners after cloud-init completes.
 
@@ -305,9 +304,6 @@ cat ~/logs/borg-backup.log
 # The output should look similar to this:
 # === Backup started: Mon Feb 23 03:30:01 PM UTC 2026 ===
 # === Backup finished: Mon Feb 23 03:30:03 PM UTC 2026 ===
-
-# 4. Save the borg passphrase for disaster recovery
-./tf.sh foobar output -raw borg_passphrase
 ```
 
 Each environment gets its own StorageBox **subaccount** (created automatically), chrooted to
@@ -370,17 +366,17 @@ Backups cover `/home/app/current` (compose files, `.env`, traefik config, letsen
 # 1. SSH into the server as ops
 ssh ops@<foobar-ip> -p <foobar-ssh-port>
 
-# 2. Pause automatic backups
+# 2. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
+sudo ~/scripts/borg-backup.sh
+
+# 3. Pause automatic backups (prevents the hourly backup from interfering with the restore)
 touch ~/.backup-paused
 
-# 3. List available archives to find the one you want
+# 4. List available archives to find the one you want
 sudo ~/scripts/borg-restore.sh
 
-# 4. Stop the running application
+# 5. Stop the running application
 app docker compose down
-
-# 5. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
-sudo ~/scripts/borg-backup.sh
 
 # 6. Extract the archive over the existing data - this will also extract the database dump to /home/ops/pgdump
 sudo ~/scripts/borg-restore.sh <archive-name>
