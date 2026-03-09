@@ -5,13 +5,14 @@ set -euo pipefail
 # It sources borg config from the ops user's home directory.
 
 OPS_HOME="/home/ops"
+LOG_FILE="$OPS_HOME/logs/borg-backup.log"
 
 # Guard: skip if secrets not yet provisioned
 [ -f "$OPS_HOME/.config/borg/env" ] || exit 0
 
 # Guard: skip if backup is paused (e.g. during a restore)
 if [ -f "$OPS_HOME/.backup-paused" ]; then
-  echo "Backup paused — remove $OPS_HOME/.backup-paused to resume" >> "$OPS_HOME/logs/borg-backup.log"
+  echo "=== Backup paused — remove $OPS_HOME/.backup-paused to resume: $(date) === " >> "$LOG_FILE"
   printf "Subject: [$(hostname)] Borg backup SKIPPED (paused)\n\nBackup was skipped at $(date) because $OPS_HOME/.backup-paused exists.\n\nRemove the file to resume automatic backups." \
     | msmtp ${notify_email}
   exit 0
@@ -27,21 +28,20 @@ done < "$OPS_HOME/.config/borg/env"
 export BORG_RSH="ssh -i $OPS_HOME/.ssh/backup_key -o StrictHostKeyChecking=accept-new"
 
 BACKUP_NAME="$(hostname)-$(date +%Y-%m-%dT%H:%M:%S)"
-LOG_FILE="$OPS_HOME/logs/borg-backup.log"
 PGDUMP_SCRIPT="$OPS_HOME/scripts/pg-dump.sh"
 PGDUMP_DIR="$OPS_HOME/pgdump"
 EXTRA_PATHS=""
 
-{
+(
   echo "=== Backup started: $(date) ==="
 
   # Pre-backup hook: pg_dump (if configured)
   if [ -x "$PGDUMP_SCRIPT" ]; then
-    "$PGDUMP_SCRIPT"
+    "$PGDUMP_SCRIPT" || exit 1
     EXTRA_PATHS="$PGDUMP_DIR"
   fi
 
-  # Create backup (only /home/app/current — DB data lives outside and is handled by pg_dump)
+  # Create backup
   borg create \
     --read-special \
     --compression zstd,3 \
@@ -64,7 +64,10 @@ EXTRA_PATHS=""
   [ -d "$PGDUMP_DIR" ] && rm -rf "$PGDUMP_DIR"
 
   echo "=== Backup finished: $(date) ==="
-} >> "$LOG_FILE" 2>&1 || {
+) >> "$LOG_FILE" 2>&1 || {
+
+  echo "=== Backup failed: $(date) ===" >> "$LOG_FILE"
+  
   printf "Subject: [$(hostname)] Borg backup FAILED\n\nBackup failed at $(date).\n\nLast 50 lines of log:\n$(tail -50 $LOG_FILE)" \
     | msmtp ${notify_email}
 }

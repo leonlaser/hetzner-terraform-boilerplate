@@ -2,7 +2,11 @@
 
 A boilerplate for deploying containerized applications on Hetzner Cloud with Docker. It is the result of extracting the most basic parts of multiple production environments.
 
-The aim is to document a basic way of bootstrapping and infrastructure and deploying applications, without introducing more complexity and dependencies than necessary.
+The aim is to:
+
+- document a way of bootstrapping and deploying infrastructure and applications
+- provide some utility scripts to help backup and restore tasks
+- keep the complexity as low as possible, so it can be understood more easily and adapted to your own needs
 
 ## Prerequisites
 
@@ -346,19 +350,14 @@ checks for an executable `~/scripts/pg-dump.sh` and calls it before creating the
 3. Borg archives the dump directory (raw DB data at `/home/app/postgresql` is outside the backup path)
 4. After Borg completes, the dump is cleaned up
 
-**Borg incremental efficiency:** The directory format creates one file per table. Between hourly backups, only tables with changed data produce different files. Borg's content-defined chunking deduplicates unchanged table files — much more efficient than backing up the raw data directory where WAL files change constantly.
+The directory format creates one file per table, which helps borg to only back up changed tables.
 
-**Per-table restore:** The directory format supports selective restore. Use `pg_restore --list` to inspect the dump contents and `pg_restore --table=X` to restore individual tables.
-
-**Dedicated DB server (`database` is set):** Works automatically — `pg-dump.sh` runs against the
-Docker Compose file at `/home/app/current`.
-
-**App server with local DB (`database` is not set):** Your Docker Compose file must name the
-PostgreSQL service `database` (matching the boilerplate convention). Until the first CI/CD
-deployment, `pg-dump.sh` will fail (no compose file yet), which aborts the backup and sends an
-alert email — this is expected and resolves after the first deployment.
+**Your Docker Compose file must name the PostgreSQL service `database`** to match the boilerplate convention. 
 
 **If `pg-dump.sh` fails** (database not running, disk full, etc.), the backup is aborted and an alert email is sent. This is intentional — a failed dump means no consistent backup is possible.
+
+**Until the first CI/CD deployment, `pg-dump.sh` will fail**, when the database is on the same server (no running database service yet). The backup script will abort and send an alert email. This is expected and resolves after the first deployment.
+
 
 ### Restoring from a Backup
 
@@ -372,7 +371,7 @@ Backups cover `/home/app/current` (compose files, `.env`, traefik config, letsen
 ssh ops@<foobar-ip> -p <foobar-ssh-port>
 
 # 2. Pause automatic backups
-touch ~/backup-paused
+touch ~/.backup-paused
 
 # 3. List available archives to find the one you want
 sudo ~/scripts/borg-restore.sh
@@ -397,7 +396,7 @@ rm -rf /home/ops/pgdump
 app docker compose up -d
 
 # 9. Resume automatic backups
-rm ~/backup-paused
+rm ~/.backup-paused
 ```
 
 > **Note:** After server recreation (new server = empty disk), trigger a re-deployment from CI to pull the necessary docker images. The image tag you need to deploy for the restored backup is available in the restored `.env` file.

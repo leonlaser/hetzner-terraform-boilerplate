@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DUMP_DIR="/home/ops/pgdump"
-echo "  pg_dump started: $(date)"
+echo "pg_dump started: $(date)"
 
 rm -rf "$DUMP_DIR"
 mkdir -p "$DUMP_DIR"
@@ -18,4 +18,4 @@ sudo -u app docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && \
 
 chown -R ops:ops "$DUMP_DIR"
 
-echo "  pg_dump finished: $(date)"
+echo "pg_dump finished: $(date)"

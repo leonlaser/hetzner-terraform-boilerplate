@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DUMP_DIR="/home/ops/pgdump"
-echo "  pg_restore started: $(date)"
+echo "pg_restore started: $(date)"
 
 cd /home/app/current
 sudo -u app docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && mkdir -p /tmp/pgdump'
@@ -15,4 +15,4 @@ sudo -u app docker compose exec database rm -rf /tmp/pgdump
 
 rm -rf "$DUMP_DIR"
 
-echo "  pg_restore finished: $(date)"
+echo "pg_restore finished: $(date)"
