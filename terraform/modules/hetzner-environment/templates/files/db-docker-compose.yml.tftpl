@@ -3,16 +3,20 @@ services:
     image: postgres:18.3
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", 'pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}']
+      test: ["CMD-SHELL", "pg_isready -d $$${POSTGRES_DB} -U $$${POSTGRES_USER}"]
       interval: 30s
       timeout: 60s
       retries: 5
       start_period: 80s
     volumes:
-      - /home/app/postgresql:/var/lib/postgresql
+      - pgdata:/var/lib/postgresql
     environment:
       POSTGRES_USER: "${db_user}"
       POSTGRES_PASSWORD: "${db_password}"
       POSTGRES_DB: "${db_name}"
     ports:
       - "${db_listen_ip}:5432:5432"
+
+volumes:
+    pgdata:
+    

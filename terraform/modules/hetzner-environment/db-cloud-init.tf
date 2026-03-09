@@ -26,7 +26,7 @@ locals {
     })
 
     docker_compose_config = templatefile("${path.module}/templates/files/db-docker-compose.yml.tftpl", {
-      db_user      = var.app_env_vars["DB_NAME"]
+      db_user      = var.app_env_vars["DB_USER"]
       db_password  = var.app_env_vars["DB_PASSWORD"]
       db_name      = var.app_env_vars["DB_NAME"]
       db_listen_ip = local.internal_ips.database
@@ -43,6 +43,8 @@ locals {
     borg_restore_script = var.backup != null ? file("${path.module}/templates/files/borg-restore.sh.tftpl") : ""
 
     pg_dump_script = var.backup != null ? file("${path.module}/templates/files/pg-dump.sh.tftpl") : ""
+    
+    pg_restore_script = var.backup != null ? file("${path.module}/templates/files/pg-restore.sh.tftpl") : ""
 
     finish_provisioning_script = templatefile("${path.module}/templates/files/finish-provisioning.sh.tftpl", {
       database_ip = ""
