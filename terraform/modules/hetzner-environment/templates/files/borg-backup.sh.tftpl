@@ -9,6 +9,14 @@ OPS_HOME="/home/ops"
 # Guard: skip if secrets not yet provisioned
 [ -f "$OPS_HOME/.config/borg/env" ] || exit 0
 
+# Guard: skip if backup is paused (e.g. during a restore)
+if [ -f "$OPS_HOME/.backup-paused" ]; then
+  echo "Backup paused — remove $OPS_HOME/.backup-paused to resume" >> "$OPS_HOME/logs/borg-backup.log"
+  printf "Subject: [$(hostname)] Borg backup SKIPPED (paused)\n\nBackup was skipped at $(date) because $OPS_HOME/.backup-paused exists.\n\nRemove the file to resume automatic backups." \
+    | msmtp ${notify_email}
+  exit 0
+fi
+
 # Parse borg env safely — only accept known variables, never execute the file as shell code
 while IFS='=' read -r key value; do
   value=$(echo "$value" | tr -d '"')

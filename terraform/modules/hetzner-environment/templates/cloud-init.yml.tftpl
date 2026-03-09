@@ -190,6 +190,16 @@ write_files:
     content: |
       ${indent(6, chomp(pg_dump_script))}
 %{ endif }
+%{ if pg_restore_script != "" }
+
+  # pg_restore script (will read the restored dump in /home/ops/pgdump and restore it)
+  - path: /home/ops/scripts/pg-restore.sh
+    owner: ops:ops
+    permissions: '0755'
+    defer: true
+    content: |
+      ${indent(6, chomp(pg_restore_script))}
+%{ endif }
 %{ endif }
 
 runcmd:

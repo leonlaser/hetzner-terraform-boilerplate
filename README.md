@@ -365,26 +365,39 @@ alert email — this is expected and resolves after the first deployment.
 Backups cover `/home/app/current` (compose files, `.env`, traefik config, letsencrypt certs) plus `pg_dump` output
 (if a database is present). Docker images are not included — re-pull them after a restore via CI/CD deployment.
 
-#### Get backup files and database dump
+#### How to restore a full backup
 
 ```bash
 # 1. SSH into the server as ops
 ssh ops@<foobar-ip> -p <foobar-ssh-port>
 
-# 2. List available archives to find the one you want
+# 2. Pause automatic backups
+touch ~/backup-paused
+
+# 3. List available archives to find the one you want
 sudo ~/scripts/borg-restore.sh
 
-# 3. Stop the running application
+# 4. Stop the running application
 app docker compose down
 
-# 4. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
+# 5. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
 sudo ~/scripts/borg-backup.sh
 
-# 5. Extract the archive over the existing data - this will also extract the database dump to /home/ops/pgdump
+# 6. Extract the archive over the existing data - this will also extract the database dump to /home/ops/pgdump
 sudo ~/scripts/borg-restore.sh <archive-name>
 
-# 6. Start the application again
+# 7. Either start and restore the database ...
+app docker compose up -d database
+~/scripts/pg-restore.sh
+
+# ... or delete the extracted database dump
+rm -rf /home/ops/pgdump
+
+# 8. Start the application again
 app docker compose up -d
+
+# 9. Resume automatic backups
+rm ~/backup-paused
 ```
 
 > **Note:** After server recreation (new server = empty disk), trigger a re-deployment from CI to pull the necessary docker images. The image tag you need to deploy for the restored backup is available in the restored `.env` file.
@@ -409,24 +422,29 @@ sudo ~/scripts/borg-restore.sh
 #    If you already extracted the whole archive, you can skip this
 sudo ~/scripts/borg-restore.sh <archive-name> home/ops/pgdump
 
+# 3. Restore the whole database
+~/scripts/pg-restore.sh
+```
+
+If you want to restore only specific tables, you can do the restore process manually:
+
+```bash
+# 1. List dumps and extract a dump from a backup archive
+sudo ~/scripts/borg-restore.sh
+sudo ~/scripts/borg-restore.sh <archive-name> home/ops/pgdump
+
 # 2. Copy the database dump into the container and ...
 app docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && mkdir -p /tmp/pgdump'
 tar cf - -C /home/ops/pgdump . | app docker compose exec -T database bash -c 'tar xf - -C /tmp/pgdump'
 
-# ... restore the full database
-app docker compose exec -T database bash -c 'pg_restore \
-  --clean --if-exists --jobs=2 \
-  --dbname="$POSTGRES_DB" --username="$POSTGRES_USER" \
-  /tmp/pgdump'
-
-# ... restore a single table
+# 3. Restore a single table
 app docker compose exec -T database pg_restore --list /tmp/pgdump | grep 'TABLE DATA'
 app docker compose exec -T database bash -c 'pg_restore\
   --dbname="$POSTGRES_DB" --username="$POSTGRES_USER" \
   --table=<table-name> --clean \
   /tmp/pgdump'
 
-# 3. Cleanup
+# 4. Cleanup
 rm -rf /home/ops/pgdump
 app docker compose exec database rm -rf /tmp/pgdump
 ```
@@ -435,21 +453,10 @@ app docker compose exec database rm -rf /tmp/pgdump
 
 Full recovery procedure after server loss:
 
-1. Provision new server(s)
-  ```bash
-  ./tf.sh <env> apply
-  ```
+1. Provision new server(s): `./tf.sh <env> apply`
 2. Wait for the setup to be done
-3. Follow the [restore procedure](#restoring-from-a-backup) for the app server and the optional database server
-4. Verify that the database is available:
-  ```bash
-  app docker compose exec -T database bash -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB" -c "\dt"'
-  ```
-5. Cleanup backups
-  ```bash
-  rm -rf /home/ops/pgdump
-  app docker compose exec database rm -rf /tmp/pgdump
-  ```
+3. Follow the [restore procedure](#how-to-restore-a-full-backup) but skip the final `app docker compose up -d`
+4. Look up the deployed image tag in `.env` and deploy the image tag again via CI/CD
 
 ## Server Replacement Safety
 
