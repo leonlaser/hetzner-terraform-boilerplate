@@ -19,12 +19,6 @@ variable "server_type" {
   description = "Hetzner server type (e.g. cx33, cx43, cpx22, cpx32, ccx13, ccx23)"
 }
 
-variable "volume_size" {
-  type        = number
-  default     = 10
-  description = "Block storage volume size in GB"
-}
-
 variable "domain" {
   type        = string
   description = "Domain name pointing to the server's floating IP"
@@ -54,7 +48,7 @@ variable "admin_ssh_public_keys" {
 variable "location" {
   type        = string
   default     = "fsn1"
-  description = "Hetzner datacenter location for servers and volumes (fsn1, nbg1, hel1, ash)"
+  description = "Hetzner datacenter location for servers (fsn1, nbg1, hel1, ash)"
 }
 
 variable "floating_ip_location" {
@@ -103,7 +97,6 @@ variable "acme_mail" {
 variable "delete_protection" {
   type = object({
     server      = bool
-    volume      = bool
     floating_ip = bool
   })
   description = "Enable Hetzner delete_protection and OpenTofu prevent_destroy for critical resources"
@@ -144,7 +137,6 @@ variable "swap_size" {
 variable "database" {
   type = object({
     server_type = string
-    volume_size = number
   })
   default     = null
   description = "Dedicated database server. Null means DB runs on the app server."

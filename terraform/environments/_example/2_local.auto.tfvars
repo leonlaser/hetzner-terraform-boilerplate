@@ -3,7 +3,7 @@ environment_name = "[REPLACE_ME]"
 deploy_branch    = "[REPLACE_ME]"
 
 location = "fsn1"
-# Optional: If you need to recreate server+volume in another region but want to keep the floating IP
+# Optional: If you need to recreate the server in another region but want to keep the floating IP
 # floating_ip_location = "fsn1
 
 # Optional: Environment specific variables
@@ -13,7 +13,6 @@ location = "fsn1"
 
 delete_protection = {
   server      = false
-  volume      = false
   floating_ip = false
 }
 
@@ -25,5 +24,4 @@ delete_protection = {
 # Optional: Dedicated database server (null = DB runs on app server)
 # database = {
 #   server_type = "cx32"
-#   volume_size = 10
 # }

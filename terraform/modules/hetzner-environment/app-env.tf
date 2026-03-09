@@ -4,8 +4,8 @@ locals {
   base_env_vars = {
     APP_DOMAIN              = var.domain
     ACME_MAIL               = var.acme_mail
-    ACME_STORAGE_DIR        = "/mnt/storage/var/docker/letsencrypt"
-    DB_VOLUME               = "/mnt/storage/var/docker/postgresql"
+    ACME_STORAGE_DIR        = "/home/app/current/letsencrypt"
+    DB_VOLUME               = "/home/app/postgresql"
     TRAEFIK_DASHBOARD_USERS = terraform_data.app_traefik_dashboard_htpasswd.output
   }
 

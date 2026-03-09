@@ -19,6 +19,6 @@ resource "random_password" "database_password" {
 locals {
   dynamic_env_vars = {
     APP_URL     = "https://${var.domain}"
-    DB_PASSWORD = random_string.database_password.result
+    DB_PASSWORD = random_password.database_password.result
   }
 }

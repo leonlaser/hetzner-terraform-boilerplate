@@ -3,7 +3,6 @@ locals {
     generated_public_key  = tls_private_key.app_deploy_user.public_key_openssh
     ops_public_key        = tls_private_key.ops_user.public_key_openssh
     admin_ssh_public_keys = var.admin_ssh_public_keys
-    volume_id             = hcloud_volume.database[0].id
 
     sshd_hardening_config = templatefile("${path.module}/templates/files/sshd-hardening.conf.tftpl", {
       ssh_port             = 22

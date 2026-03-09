@@ -8,18 +8,14 @@ rm -rf "$DUMP_DIR"
 mkdir -p "$DUMP_DIR"
 
 # pg_dump inside the container in directory format (one file per table)
-# Tar-stream output to local disk (faster than network volume)
-# No volume mount needed — works with any compose setup
-sudo -iu app docker compose exec -T database bash -c '\
-  rm -rf /tmp/pgdump && \
-  pg_dump \
-    --username="$POSTGRES_USER" \
-    --format=directory \
-    --jobs=2 \
-    --file=/tmp/pgdump \
-    "$POSTGRES_DB" && \
-  tar -C /tmp -cf - pgdump && \
-  rm -rf /tmp/pgdump' \
+# Tar-stream output to local disk
+cd /home/app/current
+sudo -u app docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && \
+    pg_dump --username="$POSTGRES_USER" --format=directory --jobs=2 --file=/tmp/pgdump "$POSTGRES_DB" && \
+    tar -C /tmp -cf - pgdump && \
+    rm -rf /tmp/pgdump' \
   | tar -C "$DUMP_DIR" -xf - --strip-components=1
+
+chown -R ops:ops "$DUMP_DIR"
 
 echo "  pg_dump finished: $(date)"

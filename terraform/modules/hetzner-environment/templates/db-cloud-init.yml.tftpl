@@ -95,13 +95,13 @@ write_files:
       app:100000:65536
     append: true
 
-  # Shortcut: `app` switches to app user with login shell
+  # Shortcut: `app` runs commands as app user in /home/app/current
   - path: /home/ops/.bash_aliases
     owner: ops:ops
     permissions: '0644'
     defer: true
     content: |
-      app() { sudo -iu app "$@"; }
+      app() { cd /home/app/current && sudo -u app "$@"; cd - > /dev/null; }
 
   # Sudoers: ops can run privileged scripts as root, ops can switch to app
   - path: /etc/sudoers.d/ops
@@ -111,7 +111,7 @@ write_files:
       ops ALL=(app) NOPASSWD: ALL
 
   # Docker Compose file for running the database
-  - path: /home/app/compose.yml
+  - path: /home/app/current/compose.yml
     permissions: '0644'
     owner: app:app
     defer: true
@@ -144,7 +144,7 @@ write_files:
     content: |
       ${indent(6, chomp(borg_helper_script))}
 
-  # Borg restore script (extracts archive to /mnt/storage — runs as root via sudo)
+  # Borg restore script (extracts archive — runs as root via sudo)
   - path: /home/ops/scripts/borg-restore.sh
     permissions: '0755'
     defer: true
@@ -180,13 +180,16 @@ runcmd:
   - echo '. ~/.docker-env' >> /home/app/.profile
   - echo '. ~/.docker-env' >> /home/app/.bashrc
 
-  # Symlink Hetzner volume automount to /mnt/storage
-  - ln -sfn /mnt/HC_Volume_${volume_id} /mnt/storage
-  - mkdir -p /mnt/storage/var
-  - chown app:app /mnt/storage/var
+  # Allow ops to traverse /home/app (for the `app` alias and scripts)
+  - usermod -aG app ops
+  - chmod 750 /home/app
+
+  # Create app directories (current/ for compose files, postgresql/ for DB data)
+  - mkdir -p /home/app/current /home/app/postgresql
+  - chown app:app /home/app/current /home/app/postgresql
 
   # Start Database via Docker Compose
-  - su - app -c "docker compose up -d"
+  - cd /home/app/current && sudo -u app docker compose up -d
 
   # Create ops directory structure (scripts dir is root-owned to prevent privilege escalation)
   - mkdir -p /home/ops/.config/borg /home/ops/.ssh /home/ops/logs /home/ops/scripts

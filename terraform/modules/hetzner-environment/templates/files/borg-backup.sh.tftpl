@@ -19,11 +19,9 @@ done < "$OPS_HOME/.config/borg/env"
 export BORG_RSH="ssh -i $OPS_HOME/.ssh/backup_key -o StrictHostKeyChecking=accept-new"
 
 BACKUP_NAME="$(hostname)-$(date +%Y-%m-%dT%H:%M:%S)"
-BACKUP_PATH="$(readlink -f /mnt/storage)"
 LOG_FILE="$OPS_HOME/logs/borg-backup.log"
 PGDUMP_SCRIPT="$OPS_HOME/scripts/pg-dump.sh"
 PGDUMP_DIR="$OPS_HOME/pgdump"
-EXCLUDE_ARGS=""
 EXTRA_PATHS=""
 
 {
@@ -32,20 +30,15 @@ EXTRA_PATHS=""
   # Pre-backup hook: pg_dump (if configured)
   if [ -x "$PGDUMP_SCRIPT" ]; then
     "$PGDUMP_SCRIPT"
-    EXCLUDE_ARGS="--exclude */var/docker/postgresql"
     EXTRA_PATHS="$PGDUMP_DIR"
-    echo "  Excluding raw PostgreSQL data directory from borg archive."
   fi
 
-  # Create backup (/mnt/storage is a symlink — resolve to actual mount)
+  # Create backup (only /home/app/current — DB data lives outside and is handled by pg_dump)
   borg create \
     --read-special \
     --compression zstd,3 \
-    --exclude '*/lost+found' \
-    $EXCLUDE_ARGS \
     "::$BACKUP_NAME" \
-    "$BACKUP_PATH" \
-    /home/app \
+    /home/app/current \
     $EXTRA_PATHS
 
   # Prune old backups

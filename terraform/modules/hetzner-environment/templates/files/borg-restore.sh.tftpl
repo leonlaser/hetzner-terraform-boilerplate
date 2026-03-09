@@ -5,7 +5,6 @@ set -euo pipefail
 # The sudoers entry allows the ops user to run this as root.
 
 OPS_HOME="/home/ops"
-STORAGE_PATH="$(readlink -f /mnt/storage)"
 
 # Parse borg env safely — only accept known variables, never execute the file as shell code
 while IFS='=' read -r key value; do
@@ -30,7 +29,7 @@ fi
 shift
 
 echo "Archive:  $ARCHIVE"
-echo "Target:   $STORAGE_PATH, /home/app"
+echo "Target:   /home/app/current"
 [ $# -gt 0 ] && echo "Paths:    $*"
 echo ""
 read -p "This will overwrite existing files. Continue? [y/N] " -r

@@ -9,7 +9,7 @@ services:
       retries: 5
       start_period: 80s
     volumes:
-      - /mnt/storage/var/docker/postgresql:/var/lib/postgresql
+      - /home/app/postgresql:/var/lib/postgresql
     environment:
       POSTGRES_USER: "${db_user}"
       POSTGRES_PASSWORD: "${db_password}"

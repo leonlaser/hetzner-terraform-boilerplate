@@ -59,7 +59,7 @@ jobs:
           printf 'COMPOSE_FILE=%s\n' "${{ steps.compose.outputs.files }}" >> .env.tmp
           scp -i ~/.ssh/deploy_key -P ${{ secrets.APP_SERVER_SSH_PORT }} \
             .env.tmp \
-            app@${{ secrets.APP_SERVER_IP }}:/home/app/.env
+            app@${{ secrets.APP_SERVER_IP }}:/home/app/current/.env
           rm .env.tmp
         env:
           APP_ENV: ${{ secrets.APP_ENV }}
@@ -69,10 +69,10 @@ jobs:
           scp -i ~/.ssh/deploy_key -P ${{ secrets.APP_SERVER_SSH_PORT }} \
             docker/compose/_compose.base.app.yaml \
             docker/compose/compose.prod.app.yaml \
-            app@${{ secrets.APP_SERVER_IP }}:/home/app/
+            app@${{ secrets.APP_SERVER_IP }}:/home/app/current/
           scp -i ~/.ssh/deploy_key -P ${{ secrets.APP_SERVER_SSH_PORT }} \
             docker/compose/traefik/traefik.prod.yaml \
-            app@${{ secrets.APP_SERVER_IP }}:/home/app/traefik/
+            app@${{ secrets.APP_SERVER_IP }}:/home/app/current/traefik/
 
 
       - name: Copy database compose files
@@ -81,7 +81,7 @@ jobs:
           scp -i ~/.ssh/deploy_key -P ${{ secrets.APP_SERVER_SSH_PORT }} \
             docker/compose/_compose.base.db.yaml \
             docker/compose/compose.prod.db.yaml \
-            app@${{ secrets.APP_SERVER_IP }}:/home/app/
+            app@${{ secrets.APP_SERVER_IP }}:/home/app/current/
 
       - name: Pre-deploy backup
         if: vars.BACKUP_ENABLED == 'true'
@@ -92,6 +92,7 @@ jobs:
       - name: Deploy
         run: |
           ssh -i ~/.ssh/deploy_key -p ${{ secrets.APP_SERVER_SSH_PORT }} app@${{ secrets.APP_SERVER_IP }} \
-            "echo '${{ secrets.GITHUB_TOKEN }}' | docker login ${{ vars.DOCKER_REGISTRY }} -u ${{ github.actor }} --password-stdin && \
+            "cd /home/app/current && \
+             echo '${{ secrets.GITHUB_TOKEN }}' | docker login ${{ vars.DOCKER_REGISTRY }} -u ${{ github.actor }} --password-stdin && \
              docker compose pull && \
              docker compose up -d --remove-orphans"

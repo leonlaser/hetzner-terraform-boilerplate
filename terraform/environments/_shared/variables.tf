@@ -86,7 +86,6 @@ variable "acme_mail" {
 variable "delete_protection" {
   type = object({
     server      = bool
-    volume      = bool
     floating_ip = bool
   })
   description = "Enable Hetzner delete_protection and OpenTofu prevent_destroy for critical resources"
@@ -110,11 +109,6 @@ variable "server_type" {
   default = "cx23"
 }
 
-variable "volume_size" {
-  type    = number
-  default = 10
-}
-
 variable "base_env_vars" {
   type      = map(string)
   default   = {}
@@ -136,7 +130,6 @@ variable "swap_size" {
 variable "database" {
   type = object({
     server_type = string
-    volume_size = number
   })
   default     = null
   description = "Dedicated database server. Null means DB runs on the app server."

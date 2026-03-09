@@ -141,7 +141,7 @@ The boilerplate suggests defining at least `STATE_PASSPHRASE` / `TF_ENCRYPTION` 
 
 ### Shared Configuration
 
-Project-wide defaults are stored in `terraform/environments/_shared/global.tfvars`. For example, server type, volume size, SSH keys, SMTP config, base app env vars. Symlinked as
+Project-wide defaults are stored in `terraform/environments/_shared/global.tfvars`. For example, server type, SSH keys, SMTP config, base app env vars. Symlinked as
 `1_global.auto.tfvars` into each environment.
 
 ### Configuration Per-Environment
@@ -181,7 +181,6 @@ Benefits:
 ```hcl
 database = {
   server_type = "cx32"
-  volume_size = 20
 }
 ```
 
@@ -192,11 +191,7 @@ DB backup is automatic when both `backup` and `database` are set — the DB serv
 **Post-apply steps (when database is enabled):**
 
 ```bash
-# 1. Verify PostgreSQL is running
-ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20 "sudo -iu app docker compose ps"
-
-# 2. Save DB borg passphrase for disaster recovery
-./tf.sh prod output -raw borg_passphrase
+ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20 "cd /home/app/current && sudo -u app docker compose ps"
 ```
 
 #### Delete Protection
@@ -205,8 +200,7 @@ Each environment controls whether critical resources can be destroyed via `delet
 
 ```hcl
 delete_protection = {
-  server = true   # app server (also enables rebuild_protection)
-  volume = true   # persistent storage volume
+  server = true        # app server (also enables rebuild_protection)
   floating_ip = true   # IPv4 and IPv6 floating IPs
 }
 ```
@@ -278,15 +272,15 @@ Three users with distinct roles:
 | **root**   | System services only           | Disabled (`PermitRootLogin no`)  |
 
 - Authorized developers login via their SSH keys as `ops`
-- The `app` shell function (defined in `~/.bash_aliases`) switches to the app user with a login shell: `app` opens an interactive session, `app docker compose ps` runs a single command. It is a shortcut for `sudo -iu app`.
+- The `app` shell function (defined in `~/.bash_aliases`) runs commands as the `app` user from `/home/app/current`. For example: `app docker compose ps`. It is a shortcut for `cd /home/app/current && sudo -u app`.
 - Secrets are **not** in cloud-init — they are pushed via Terraform provisioners after cloud-init completes
 - Backups, monitoring scripts, and crontabs are owned by `ops` under `~/scripts/` and `~/logs/`
-- The Hetzner volume is mounted at `/mnt/storage`
-- Docker Compose configuration and `.env` is deployed to `/home/app`
+- Compose files, `.env`, traefik config, and letsencrypt certs live in `/home/app/current`
+- Database data is stored separately at `/home/app/postgresql` (not backed up directly — `pg_dump` handles it)
 
 ## Backups (Borg + Hetzner StorageBox)
 
-Setting the `backup` variable enables automated Borg backups of `/mnt/storage` and `/home/app`. When a PostgreSQL database is present (dedicated DB server or app-local), `pg_dump` runs automatically before Borg to create a consistent dump. The raw PostgreSQL data directory is excluded from the archive — only the dump is backed up.
+Setting the `backup` variable enables automated Borg backups of `/home/app/current`. When a PostgreSQL database is present (dedicated DB server or app-local), `pg_dump` runs automatically before Borg to create a consistent dump. Database data lives at `/home/app/postgresql` — outside the backup path, so only the dump is archived.
 
 **Retention:** 48 hourly, 7 daily, 4 weekly, 6 monthly, 1 yearly.
 
@@ -338,7 +332,7 @@ The automated backup script (`borg-backup.sh`) and the provisioner's `borg init`
 
 > **Note:** For extracting archives, use `sudo ~/scripts/borg-restore.sh` instead of `borg.sh extract`.
 > The restore script runs as root via sudo, which is required to write to `app`-owned directories
-> on the volume and to restore correct file ownership.
+> and to restore correct file ownership.
 
 ### PostgreSQL Backups (pg_dump)
 
@@ -349,7 +343,7 @@ checks for an executable `~/scripts/pg-dump.sh` and calls it before creating the
 
 1. `pg-dump.sh` runs `pg_dump --format=directory` inside the database container
 2. The dump is tar-streamed to `/home/ops/pgdump/` on local disk
-3. Borg archives the dump directory and excludes the raw PostgreSQL data directory (`*/var/docker/postgresql`)
+3. Borg archives the dump directory (raw DB data at `/home/app/postgresql` is outside the backup path)
 4. After Borg completes, the dump is cleaned up
 
 **Borg incremental efficiency:** The directory format creates one file per table. Between hourly backups, only tables with changed data produce different files. Borg's content-defined chunking deduplicates unchanged table files — much more efficient than backing up the raw data directory where WAL files change constantly.
@@ -357,7 +351,7 @@ checks for an executable `~/scripts/pg-dump.sh` and calls it before creating the
 **Per-table restore:** The directory format supports selective restore. Use `pg_restore --list` to inspect the dump contents and `pg_restore --table=X` to restore individual tables.
 
 **Dedicated DB server (`database` is set):** Works automatically — `pg-dump.sh` runs against the
-Docker Compose file at `/home/app`.
+Docker Compose file at `/home/app/current`.
 
 **App server with local DB (`database` is not set):** Your Docker Compose file must name the
 PostgreSQL service `database` (matching the boilerplate convention). Until the first CI/CD
@@ -368,8 +362,8 @@ alert email — this is expected and resolves after the first deployment.
 
 ### Restoring from a Backup
 
-Backups cover `/mnt/storage` (Docker volumes, persistent data) and `/home/app` (compose files, `.env`) plus `pg_dump` output
-(if a database is present). Docker images live on the server's local disk and are not affected by a restore — no need to re-pull them.
+Backups cover `/home/app/current` (compose files, `.env`, traefik config, letsencrypt certs) plus `pg_dump` output
+(if a database is present). Docker images are not included — re-pull them after a restore via CI/CD deployment.
 
 #### Get backup files and database dump
 
@@ -378,21 +372,18 @@ Backups cover `/mnt/storage` (Docker volumes, persistent data) and `/home/app` (
 ssh ops@<foobar-ip> -p <foobar-ssh-port>
 
 # 2. List available archives to find the one you want
-~/scripts/borg.sh list
+sudo ~/scripts/borg-restore.sh
 
-# 3. Optional: Inspect an archive to see what it contains
-~/scripts/borg.sh list ::<archive-name>
-
-# 4. Stop the running application
+# 3. Stop the running application
 app docker compose down
 
-# 5. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
+# 4. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
 sudo ~/scripts/borg-backup.sh
 
-# 6. Extract the archive over the existing data
-sudo ~/scripts/borg-restore.sh ::<archive-name>
+# 5. Extract the archive over the existing data - this will also extract the database dump to /home/ops/pgdump
+sudo ~/scripts/borg-restore.sh <archive-name>
 
-# 7. Start the application again
+# 6. Start the application again
 app docker compose up -d
 ```
 
@@ -403,12 +394,12 @@ app docker compose up -d
 Use `~/scripts/borg.sh list ::<archive-name>` to see the exact paths, then extract only what you need:
 
 ```bash
-sudo ~/scripts/borg-restore.sh ::<archive-name> mnt/HC_Volume_<id>/var/docker/letsencrypt
+sudo ~/scripts/borg-restore.sh <archive-name> home/app/current/letsencrypt
 ```
 
 #### Restoring the PostgreSQL dump from a borg archive
 
-The `pg_dump` output is stored at `home/ops/pgdump/` in the archive (relative path, on local disk). The same procedure applies for both dedicated DB servers and app servers with a local database.
+The `pg_dump` output is stored at `home/ops/pgdump/` in the archive (relative path, on local disk). The following procedure applies for both dedicated DB servers and app servers with a local database.
 
 ```bash
 # 1. List all available backups to select what want to restore
@@ -416,7 +407,7 @@ sudo ~/scripts/borg-restore.sh
 
 # 2. Extract the pg_dump from the archive
 #    If you already extracted the whole archive, you can skip this
-sudo ~/scripts/borg-restore.sh ::<archive-name> home/ops/pgdump
+sudo ~/scripts/borg-restore.sh <archive-name> home/ops/pgdump
 
 # 2. Copy the database dump into the container and ...
 app docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && mkdir -p /tmp/pgdump'
@@ -429,7 +420,7 @@ app docker compose exec -T database bash -c 'pg_restore \
   /tmp/pgdump'
 
 # ... restore a single table
-app docker compose exec database pg_restore --list /tmp/pgdump | grep 'TABLE DATA'
+app docker compose exec -T database pg_restore --list /tmp/pgdump | grep 'TABLE DATA'
 app docker compose exec -T database bash -c 'pg_restore\
   --dbname="$POSTGRES_DB" --username="$POSTGRES_USER" \
   --table=<table-name> --clean \
@@ -440,13 +431,6 @@ rm -rf /home/ops/pgdump
 app docker compose exec database rm -rf /tmp/pgdump
 ```
 
-**If the database server is separate**, you can restore it the same way via the app server as jump host:
-
-```bash
-# Connect directly to the database server
-ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20
-```
-
 ### Disaster Recovery
 
 Full recovery procedure after server loss:
@@ -455,8 +439,8 @@ Full recovery procedure after server loss:
   ```bash
   ./tf.sh <env> apply
   ```
-2. Wait for the server(s) to be setup and ready
-3. Follow the [restore procedure](#restoring-from-a-backup) for the app server and optionally for the dedicated database server
+2. Wait for the setup to be done
+3. Follow the [restore procedure](#restoring-from-a-backup) for the app server and the optional database server
 4. Verify that the database is available:
   ```bash
   app docker compose exec -T database bash -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB" -c "\dt"'

@@ -5,7 +5,6 @@ locals {
     admin_ssh_public_keys = var.admin_ssh_public_keys
     
     ssh_port       = random_integer.app_ssh_port.result
-    volume_id      = hcloud_volume.app.id
     swap_size      = var.swap_size
     has_database   = var.database != null
     backup_enabled = var.backup != null

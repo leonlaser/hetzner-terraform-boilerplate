@@ -18,10 +18,6 @@ output "server_id" {
   value = hcloud_server.app.id
 }
 
-output "volume_id" {
-  value = hcloud_volume.app.id
-}
-
 output "traefik_dashboard_password" {
   value       = random_password.app_traefik_dashboard.result
   sensitive   = true

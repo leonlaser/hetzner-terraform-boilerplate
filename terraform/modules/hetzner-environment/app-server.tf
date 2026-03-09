@@ -78,18 +78,3 @@ resource "hcloud_floating_ip_assignment" "master_v6" {
   floating_ip_id = hcloud_floating_ip.master_v6.id
   server_id      = hcloud_server.app.id
 }
-
-resource "hcloud_volume" "app" {
-  name              = "${var.project_name}-${var.environment_name}-app-storage"
-  size              = var.volume_size
-  location          = var.location
-  format            = "ext4"
-  delete_protection = var.delete_protection.volume
-  labels            = local.app_labels
-}
-
-resource "hcloud_volume_attachment" "storage" {
-  volume_id = hcloud_volume.app.id
-  server_id = hcloud_server.app.id
-  automount = true
-}

@@ -62,7 +62,6 @@ module "environment" {
   deploy_branch    = var.deploy_branch
 
   server_type = var.server_type
-  volume_size = var.volume_size
 
   domain                = var.domain
   github_repository     = var.github_repository

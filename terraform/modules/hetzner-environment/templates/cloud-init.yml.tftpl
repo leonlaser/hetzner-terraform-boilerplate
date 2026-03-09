@@ -134,13 +134,13 @@ write_files:
       export PATH=/usr/bin:$PATH
       export DOCKER_HOST=unix:///run/user/1000/docker.sock
 
-  # Shortcut: `app` switches to app user with login shell
+  # Shortcut: `app` runs commands as app user in /home/app/current
   - path: /home/ops/.bash_aliases
     owner: ops:ops
     permissions: '0644'
     defer: true
     content: |
-      app() { sudo -iu app "$@"; }
+      app() { cd /home/app/current && sudo -u app "$@"; cd - > /dev/null; }
 
   # Rootless Docker env for non-interactive SSH sessions (CI/CD)
   - path: /home/app/.ssh/environment
@@ -167,7 +167,7 @@ write_files:
     content: |
       ${indent(6, chomp(borg_helper_script))}
 
-  # Borg restore script (extracts archive to /mnt/storage — runs as root via sudo)
+  # Borg restore script (extracts archive — runs as root via sudo)
   - path: /home/ops/scripts/borg-restore.sh
     permissions: '0755'
     defer: true
@@ -225,16 +225,13 @@ runcmd:
   - echo '. ~/.docker-env' >> /home/app/.profile
   - echo '. ~/.docker-env' >> /home/app/.bashrc
 
-  # Symlink Hetzner volume automount to /mnt/storage
-  - ln -sfn /mnt/HC_Volume_${volume_id} /mnt/storage
+  # Allow ops to traverse /home/app (for the `app` alias and scripts)
+  - usermod -aG app ops
+  - chmod 750 /home/app
 
-  # Create var directory for app user to store related data, like docker volumes, log files etc.
-  - mkdir -p /mnt/storage/var
-  - chown app:app /mnt/storage/var
-
-  # Create traefik config directory for app user
-  - mkdir -p /home/app/traefik
-  - chown app:app /home/app/traefik
+  # Create app directories (current/ is the working directory, backed up by borg)
+  - mkdir -p /home/app/current/traefik /home/app/current/letsencrypt
+  - chown -R app:app /home/app/current
 
   # Create ops directory structure (scripts dir is root-owned to prevent privilege escalation)
   - mkdir -p /home/ops/.config/borg /home/ops/.ssh /home/ops/logs /home/ops/scripts

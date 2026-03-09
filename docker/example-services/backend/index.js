@@ -5,7 +5,7 @@ const sql = new SQL({
   connectionTimeout: 2,
 });
 
-// Create a demo tables for testing backup and restore
+// Create demo tables for testing backup and restore
 await sql`
   CREATE TABLE IF NOT EXISTS users
   (

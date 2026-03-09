@@ -56,22 +56,3 @@ resource "hcloud_server" "database" {
     }
   }
 }
-
-resource "hcloud_volume" "database" {
-  count = var.database != null ? 1 : 0
-
-  name              = "${var.project_name}-${var.environment_name}-db-storage"
-  size              = var.database.volume_size
-  location          = var.location
-  format            = "ext4"
-  delete_protection = var.delete_protection.volume
-  labels            = local.database_labels
-}
-
-resource "hcloud_volume_attachment" "database" {
-  count = var.database != null ? 1 : 0
-
-  volume_id = hcloud_volume.database[0].id
-  server_id = hcloud_server.database[0].id
-  automount = true
-}
