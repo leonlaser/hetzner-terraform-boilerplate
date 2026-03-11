@@ -13,6 +13,13 @@ env.sh
 .DS_Store
 Thumbs.db
 
+# Ansible temp files (SSH keys written by OpenTofu)
+.ansible-tmp/
+
+# Packer
+packer_cache/
+*.pkr.hcl.lock.hcl
+
 # AI
 CLAUDE.md
 .claude

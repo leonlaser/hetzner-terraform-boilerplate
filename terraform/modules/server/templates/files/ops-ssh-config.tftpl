@@ -1,0 +1,7 @@
+%{ if storagebox_host != "" ~}
+Host ${storagebox_host}
+  Port 23
+  IdentityFile ~/.ssh/backup_key
+  StrictHostKeyChecking accept-new
+
+%{ endif ~}

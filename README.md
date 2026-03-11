@@ -17,7 +17,7 @@ While the boilerplate should be adapted to your own needs, it is designed to be 
 - [Hetzner StorageBox](https://www.hetzner.com/de/storage/storage-box/) for storing backups
 - [GitHub](https://github.com/) for CI/CD
 - Any SMTP E-Mail server for sending status emails
-- [OpenTofu](https://opentofu.org/) as a drop-in replacement for `terraform` to make use local state encryption
+- [OpenTofu](https://opentofu.org/) as a drop-in replacement for `terraform` to make use of local state encryption
 - [Docker Compose](https://docs.docker.com/compose/) for configuring and running the application
 - [PostgreSQL](https://www.postgresql.org/) as the application database
 - [Borg](https://www.borgbackup.org/) for automated backups
@@ -42,6 +42,9 @@ The boilerplate **does not cover** topics like:
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
+- [Packer Images](#packer-images)
+    - [Building the Images](#building-the-images)
+    - [When to Rebuild](#when-to-rebuild)
 - [Creating a New Environment](#creating-a-new-environment)
     - [Create the Environment Directory](#create-the-environment-directory)
     - [Setup Checklist](#setup-checklist)
@@ -68,6 +71,48 @@ The boilerplate **does not cover** topics like:
 - [Server Replacement Safety](#server-replacement-safety)
 - [Directory Structure](#directory-structure)
 
+## Packer Images
+
+Servers are created from Packer snapshots stored in your Hetzner Cloud project. Two images are built in sequence:
+
+1. **`base`** — Ubuntu 24.04 with fail2ban, ufw, unattended-upgrades, msmtp, borgbackup, ops user, and backup/restore scripts
+2. **`docker`** — Built on top of `base`. Adds rootless Docker, the `docker` user, and the `dkr` helper for the ops user
+
+The environment module always uses the most recent `docker` snapshot (selected by `role=docker,managed-by=packer` labels). Both app and database servers use this image.
+
+### Building the Images
+
+Both images must exist before you can deploy any environment. The `docker` image depends on `base`, so build them in order.
+
+Use `build.sh` from the project root. It sources `env.sh` for the Hetzner API token, runs `packer init`, and tags the snapshot with a version derived from the current date and git SHA:
+
+```bash
+# 1. Build the base image
+./build.sh base
+
+# 2. Build the docker image (uses the latest base snapshot automatically)
+./build.sh docker
+```
+
+Additional Packer arguments can be passed through:
+
+```bash
+./build.sh base -var 'server_type=cx32'
+```
+
+### When to Rebuild
+
+Rebuild the images when you change the Packer scripts in `packer/scripts/`:
+
+| Changed file             | Rebuild                 |
+|--------------------------|-------------------------|
+| `scripts/base-setup.sh`   | `base`, then `docker` |
+| `scripts/docker-setup.sh` | `docker` only         |
+| `scripts/upgrade.sh`      | both (for latest OS packages) |
+| `scripts/cleanup.sh`      | both                  |
+
+After building a new `docker` snapshot, existing servers are **not** affected. The new image is used only when a server is created or recreated (e.g. via `tofu apply` after a `taint` or `server_type` change).
+
 ## Creating a New Environment
 
 ### Create the Environment Directory
@@ -93,7 +138,7 @@ Replace all `[REPLACE_ME]` placeholders in:
   - [ ] Enable the database server in `2_local.auto.tfvars`.
 - Do you know which users need SSH access to the app server?
   - [ ] Add the public keys manually to the Hetzner Cloud project if not existing yet.
-  - [ ] Set `admin_ssh_key_names` in `2_local.auto.tfvars`.
+  - [ ] Set `ops_ssh_key_names` in `2_local.auto.tfvars`.
 
 ### Deploying a New Environment
 
@@ -180,6 +225,7 @@ Benefits:
 - Database isolated from public-facing app server (reduced blast radius)
 - Automatic backup when `backup` is set (shared StorageBox subaccount, separate borg repo)
 - DB server has no public IP — only reachable via internal network (`10.0.1.20`)
+- Both servers use the same Packer image and `server` module — DB-specific setup via Ansible
 
 ```hcl
 database = {
@@ -189,12 +235,12 @@ database = {
 
 When `database` is set, the app server's `DB_HOST` is automatically overridden to `10.0.1.20`. SSH to the DB server via the app server as jump host: `ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20`.
 
-DB backup is automatic when both `backup` and `database` are set — the DB server shares the same StorageBox subaccount (separate borg repo at `./db`).
+DB backup is automatic when both `backup` and `database` are set — each server gets its own StorageBox subaccount with a borg repo at `./borg`.
 
 **Post-apply steps (when database is enabled):**
 
 ```bash
-ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20 "cd /home/app/current && sudo -u app docker compose ps"
+ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20 "cd /home/docker/current && sudo -u docker docker compose ps"
 ```
 
 #### Delete Protection
@@ -236,7 +282,7 @@ Avoid showing secrets in your terminal. Users of macOS can use `pbcopy` to copy 
 instead:
 
 ```bash
-./tf.sh foobar output --raw borg_passphrase | pbcopy
+./tf.sh foobar output --raw traefik_dashboard_password | pbcopy
 ```
 
 Traefik dashboard credentials are auto-generated per environment (username: `admin`):
@@ -258,38 +304,32 @@ IP addresses:
 ./tf.sh foobar output server_ip_v6
 ```
 
-Borg backup passphrase:
-
-```bash
-./tf.sh foobar output borg_passphrase
-```
-
 ## Application Server Structure
 
 Three users with distinct roles:
 
 | User       | Purpose                        | SSH access                       |
 |------------|--------------------------------|----------------------------------|
-| **ops**    | Admin SSH, backups, monitoring | Admin SSH keys (Hetzner project) |
-| **app**    | Docker, app runtime            | Deploy key (CI/CD only)          |
+| **ops**    | Admin SSH, backups, monitoring | Ops SSH keys (Hetzner project)   |
+| **docker** | Docker, app runtime            | Deploy key (CI/CD only)          |
 | **root**   | System services only           | Disabled (`PermitRootLogin no`)  |
 
 - Authorized developers login via their SSH keys as `ops`
-- The `app` shell function (defined in `~/.bash_aliases`) runs commands as the `app` user from `/home/app/current`. For example: `app docker compose ps`. It is a shortcut for `cd /home/app/current && sudo -u app`.
-- Secrets are **not** in cloud-init — they are pushed via Terraform provisioners after cloud-init completes
+- The `dkr` shell function (defined in `~/.bashrc`) runs commands as the `docker` user from `/home/docker/current`. For example: `dkr docker compose ps`. It is a shortcut for `cd /home/docker/current && sudo -u docker`.
+- Secrets are **not** in cloud-init — they are pushed via Ansible playbooks after cloud-init completes
 - Backups, monitoring scripts, and crontabs are owned by `ops` under `~/scripts/` and `~/logs/`
-- Compose files, `.env`, traefik config, and letsencrypt certs live in `/home/app/current`
-- Database data is stored separately at `/home/app/postgresql` (not backed up directly — `pg_dump` handles it)
+- Compose files, `.env`, traefik config, and letsencrypt certs live in `/home/docker/current`
+- Database data is stored separately at `/home/docker/postgresql` (not backed up directly but via `pg_dump` and `borg`)
 
 ## Backups (Borg + Hetzner StorageBox)
 
-Setting the `backup` variable enables automated Borg backups of `/home/app/current`. When a PostgreSQL database is present (dedicated DB server or app-local), `pg_dump` runs automatically before Borg to create a consistent dump. Database data lives at `/home/app/postgresql` — outside the backup path, so only the dump is archived.
+Setting the `backup` variable enables automated Borg backups of `/home/docker/current`. When a PostgreSQL database is present (dedicated DB server or app-local), `pg_dump` runs automatically before Borg to create a consistent dump. Database data lives at `/home/docker/postgresql`, outside the backup path, so only the dump is archived.
 
 **Retention:** 48 hourly, 7 daily, 4 weekly, 6 monthly, 1 yearly.
 
 Runs every hour via the `ops` user's crontab. Emails on failure. To temporarily pause automatic backups (e.g. during a restore), create `~/.backup-paused`. The backup script will skip and send a notification email until the file is removed.
 
-SSH key installation on the StorageBox and borg repository initialization happen automatically via Terraform provisioners after cloud-init completes.
+SSH key installation on the StorageBox and borg repository initialization happen automatically via Ansible playbooks after cloud-init completes.
 
 **After deploying the server for the first time, verify that backups are working:**
 
@@ -307,7 +347,7 @@ cat ~/logs/borg-backup.log
 ```
 
 Each environment gets its own StorageBox **subaccount** (created automatically), chrooted to
-`<project>/<environment>/`. App backups go to `./app`, DB backups to `./db`.
+`<project>/<environment>/`. Each server's borg repo lives at `./borg` within its subaccount.
 
 ### Borg Helper Script
 
@@ -328,10 +368,10 @@ ssh ops@<foobar-ip> -p <foobar-ssh-port>
 ~/scripts/borg.sh <command> [args...]
 ```
 
-The automated backup script (`borg-backup.sh`) and the provisioner's `borg init` both use this helper internally.
+Ansible's `borg init` uses this helper internally. The automated backup script (`borg-backup.sh`) parses the borg env directly for security (runs as root via sudo, only accepts `BORG_REPO` and `BORG_PASSPHRASE`).
 
 > **Note:** For extracting archives, use `sudo ~/scripts/borg-restore.sh` instead of `borg.sh extract`.
-> The restore script runs as root via sudo, which is required to write to `app`-owned directories
+> The restore script runs as root via sudo, which is required to write to `docker`-owned directories
 > and to restore correct file ownership.
 
 ### PostgreSQL Backups (pg_dump)
@@ -342,8 +382,8 @@ checks for an executable `~/scripts/pg-dump.sh` and calls it before creating the
 **How it works:**
 
 1. `pg-dump.sh` runs `pg_dump --format=directory` inside the database container
-2. The dump is tar-streamed to `/home/ops/pgdump/` on local disk
-3. Borg archives the dump directory (raw DB data at `/home/app/postgresql` is outside the backup path)
+2. The dump is tar-streamed to `/home/docker/current/pgdump/` on local disk
+3. Borg archives the dump as part of `/home/docker/current` (raw DB data at `/home/docker/postgresql` is outside the backup path)
 4. After Borg completes, the dump is cleaned up
 
 The directory format creates one file per table, which helps borg to only back up changed tables.
@@ -357,7 +397,7 @@ The directory format creates one file per table, which helps borg to only back u
 
 ### Restoring from a Backup
 
-Backups cover `/home/app/current` (compose files, `.env`, traefik config, letsencrypt certs) plus `pg_dump` output
+Backups cover `/home/docker/current` (compose files, `.env`, traefik config, letsencrypt certs) plus `pg_dump` output
 (if a database is present). Docker images are not included — re-pull them after a restore via CI/CD deployment.
 
 #### How to restore a full backup
@@ -376,20 +416,20 @@ touch ~/.backup-paused
 sudo ~/scripts/borg-restore.sh
 
 # 5. Stop the running application
-app docker compose down
+dkr docker compose down
 
-# 6. Extract the archive over the existing data - this will also extract the database dump to /home/ops/pgdump
+# 6. Extract the archive over the existing data - this will also extract the database dump to /home/docker/current/pgdump
 sudo ~/scripts/borg-restore.sh <archive-name>
 
 # 7. Either start and restore the database ...
-app docker compose up -d database
+dkr docker compose up -d database
 ~/scripts/pg-restore.sh
 
 # ... or delete the extracted database dump
-rm -rf /home/ops/pgdump
+rm -rf /home/docker/current/pgdump
 
 # 8. Start the application again
-app docker compose up -d
+dkr docker compose up -d
 
 # 9. Resume automatic backups
 rm ~/.backup-paused
@@ -402,12 +442,12 @@ rm ~/.backup-paused
 Use `~/scripts/borg.sh list ::<archive-name>` to see the exact paths, then extract only what you need:
 
 ```bash
-sudo ~/scripts/borg-restore.sh <archive-name> home/app/current/letsencrypt
+sudo ~/scripts/borg-restore.sh <archive-name> home/docker/current/letsencrypt
 ```
 
 #### Restoring the PostgreSQL dump from a borg archive
 
-The `pg_dump` output is stored at `home/ops/pgdump/` in the archive (relative path, on local disk). The following procedure applies for both dedicated DB servers and app servers with a local database.
+The `pg_dump` output is stored at `home/docker/current/pgdump/` in the archive (relative path, on local disk). The following procedure applies for both dedicated DB servers and app servers with a local database.
 
 ```bash
 # 1. List all available backups to select what want to restore
@@ -415,7 +455,7 @@ sudo ~/scripts/borg-restore.sh
 
 # 2. Extract the pg_dump from the archive
 #    If you already extracted the whole archive, you can skip this
-sudo ~/scripts/borg-restore.sh <archive-name> home/ops/pgdump
+sudo ~/scripts/borg-restore.sh <archive-name> home/docker/current/pgdump
 
 # 3. Restore the whole database
 ~/scripts/pg-restore.sh
@@ -426,22 +466,22 @@ If you want to restore only specific tables, you can do the restore process manu
 ```bash
 # 1. List dumps and extract a dump from a backup archive
 sudo ~/scripts/borg-restore.sh
-sudo ~/scripts/borg-restore.sh <archive-name> home/ops/pgdump
+sudo ~/scripts/borg-restore.sh <archive-name> home/docker/current/pgdump
 
 # 2. Copy the database dump into the container and ...
-app docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && mkdir -p /tmp/pgdump'
-tar cf - -C /home/ops/pgdump . | app docker compose exec -T database bash -c 'tar xf - -C /tmp/pgdump'
+dkr docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && mkdir -p /tmp/pgdump'
+tar cf - -C /home/docker/current/pgdump . | dkr docker compose exec -T database bash -c 'tar xf - -C /tmp/pgdump'
 
 # 3. Restore a single table
-app docker compose exec -T database pg_restore --list /tmp/pgdump | grep 'TABLE DATA'
-app docker compose exec -T database bash -c 'pg_restore\
+dkr docker compose exec -T database pg_restore --list /tmp/pgdump | grep 'TABLE DATA'
+dkr docker compose exec -T database bash -c 'pg_restore\
   --dbname="$POSTGRES_DB" --username="$POSTGRES_USER" \
   --table=<table-name> --clean \
   /tmp/pgdump'
 
 # 4. Cleanup
-rm -rf /home/ops/pgdump
-app docker compose exec database rm -rf /tmp/pgdump
+rm -rf /home/docker/current/pgdump
+dkr docker compose exec database rm -rf /tmp/pgdump
 ```
 
 ### Disaster Recovery
@@ -450,7 +490,7 @@ Full recovery procedure after server loss:
 
 1. Provision new server(s): `./tf.sh <env> apply`
 2. Wait for the setup to be done
-3. Follow the [restore procedure](#how-to-restore-a-full-backup) but skip the final `app docker compose up -d`
+3. Follow the [restore procedure](#how-to-restore-a-full-backup) but skip the final `dkr docker compose up -d`
 4. Look up the deployed image tag in `.env` and deploy the image tag again via CI/CD
 
 ## Server Replacement Safety
@@ -460,13 +500,19 @@ When changing `server_type` or `location`, the module protects against data corr
 ## Directory Structure
 
 ```
-├── tf.sh                    # CLI wrapper
+├── tf.sh                    # CLI wrapper (tofu)
+├── build.sh                 # CLI wrapper (packer)
 ├── env.sh                   # Global secrets (gitignored)
+├── packer/                  # Packer image definitions
+│   ├── base.pkr.hcl         # Base image (Ubuntu + ops user + security)
+│   ├── docker.pkr.hcl       # Docker image (base + rootless Docker)
+│   └── scripts/             # Provisioning scripts for images
 └── terraform/
     ├── environments/
     │   ├── _shared/         # Symlinked into each environment
     │   ├── _example/        # Template for new environments
     │   └── foobar/          # An active environment
     └── modules/
-        └── hetzner-environment/  # Reusable environment module
+        ├── environment/     # Reusable environment module
+        └── server/          # Base server module (Packer image + Ansible provisioning)
 ```

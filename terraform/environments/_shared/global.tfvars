@@ -8,8 +8,8 @@ project_name = "[REPLACE_ME]"
 # Hetzner Cloud
 # =============================================================================
 
-# Names of SSH keys already uploaded to your Hetzner project
-admin_ssh_key_names = ["[REPLACE_ME]"]
+# Names of SSH keys to be allowed to log in as "ops" user
+ops_ssh_key_names = ["[REPLACE_ME]"]
 
 # Hetzner datacenter location (default: nbg1)
 # Options: fsn1 (Falkenstein), nbg1 (Nuremberg), hel1 (Helsinki), ash (Ashburn)
@@ -48,8 +48,8 @@ smtp_port = 587
 
 base_env_vars = {
   GLOBAL_VARIABLE = "GLOBAL_VARIABLE"
-  DB_PORT = 5432
-  DB_HOST = "[REPLACE_ME]"
-  DB_NAME = "[REPLACE_ME]"
-  DB_USER = "[REPLACE_ME]"
+  DB_PORT         = 5432
+  DB_HOST         = "[REPLACE_ME]"
+  DB_NAME         = "[REPLACE_ME]"
+  DB_USER         = "[REPLACE_ME]"
 }

@@ -5,12 +5,11 @@
 # so they can be attached to resources like servers.
 # =============================================================================
 
-data "hcloud_ssh_key" "admin" {
-  for_each = toset(var.admin_ssh_key_names)
+data "hcloud_ssh_key" "ops" {
+  for_each = toset(var.ops_ssh_key_names)
   name     = each.value
 }
 
 locals {
-  admin_ssh_key_ids     = [for key in data.hcloud_ssh_key.admin : key.id]
-  admin_ssh_public_keys = [for key in data.hcloud_ssh_key.admin : key.public_key]
+  ops_ssh_public_keys = [for key in data.hcloud_ssh_key.ops : key.public_key]
 }

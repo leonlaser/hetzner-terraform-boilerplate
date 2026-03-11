@@ -1,0 +1,69 @@
+---
+- name: App server provisioning
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # SSH config for database server (ops → db via internal key)
+    # -------------------------------------------------------------------------
+    - name: Write SSH config for database server
+      when: database_ip | default('') | length > 0
+      ansible.builtin.blockinfile:
+        path: /home/ops/.ssh/config
+        create: true
+        owner: ops
+        group: ops
+        mode: "0600"
+        marker: "# {mark} database server"
+        block: |
+          Host {{ database_ip }}
+              IdentityFile ~/.ssh/internal_key
+              StrictHostKeyChecking accept-new
+
+    # -------------------------------------------------------------------------
+    # pg-dump/pg-restore scripts (when database runs on the app server)
+    # -------------------------------------------------------------------------
+    - name: Write pg-dump script
+      when: database_ip | default('') | length == 0
+      ansible.builtin.copy:
+        src: pg-dump.sh
+        dest: /home/ops/scripts/pg-dump.sh
+        owner: ops
+        group: ops
+        mode: "0755"
+
+    - name: Write pg-restore script
+      when: database_ip | default('') | length == 0
+      ansible.builtin.copy:
+        src: pg-restore.sh
+        dest: /home/ops/scripts/pg-restore.sh
+        owner: ops
+        group: ops
+        mode: "0755"
+
+    # -------------------------------------------------------------------------
+    # Pre-deploy backup script (called by CI/CD before deployment)
+    # -------------------------------------------------------------------------
+    - name: Create pre-deploy backup script
+      ansible.builtin.copy:
+        dest: /home/ops/scripts/pre-deploy-backup.sh
+        owner: ops
+        group: ops
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          set -euo pipefail
+
+          echo "=== Pre-deploy backup started: $(date) ==="
+
+          # App backup via borg
+          sudo /home/ops/scripts/borg-backup.sh
+
+          {% if database_ip | default('') | length > 0 %}
+          # Database backup (dedicated DB server)
+          ssh -i ~/.ssh/internal_key -o StrictHostKeyChecking=accept-new {{ database_ip }} \
+            "sudo /home/ops/scripts/borg-backup.sh"
+          {% endif %}
+
+          echo "=== Pre-deploy backup finished: $(date) ==="

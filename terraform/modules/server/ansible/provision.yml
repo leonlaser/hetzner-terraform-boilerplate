@@ -1,0 +1,31 @@
+---
+- name: Base server provisioning
+  hosts: all
+  become: false
+  gather_facts: false
+
+  tasks:
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for_connection:
+        timeout: 600
+        delay: 10
+
+    - name: Wait for cloud-init to finish
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      register: cloud_init_result
+      failed_when: cloud_init_result.rc not in [0, 2]
+
+    - name: Write SMTP password
+      ansible.builtin.copy:
+        content: "{{ smtp_password }}"
+        dest: /home/ops/.msmtp-password
+        mode: "0600"
+      no_log: true
+
+    - name: Write ops internal SSH key
+      ansible.builtin.copy:
+        content: "{{ ops_internal_key }}"
+        dest: /home/ops/.ssh/internal_key
+        mode: "0600"
+      no_log: true

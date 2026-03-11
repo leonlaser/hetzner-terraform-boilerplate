@@ -55,7 +55,7 @@ provider "github" {
 }
 
 module "environment" {
-  source = "../../modules/hetzner-environment"
+  source = "../../modules/environment"
 
   project_name     = var.project_name
   environment_name = var.environment_name
@@ -66,8 +66,7 @@ module "environment" {
   domain                = var.domain
   github_repository     = var.github_repository
   docker_registry       = var.docker_registry
-  admin_ssh_key_ids     = local.admin_ssh_key_ids
-  admin_ssh_public_keys = local.admin_ssh_public_keys
+  ops_ssh_public_keys   = local.ops_ssh_public_keys
   location              = var.location
   floating_ip_location  = var.floating_ip_location
   smtp_host             = var.smtp_host
@@ -90,11 +89,11 @@ module "environment" {
 }
 
 output "server_ip" {
-  value = module.environment.server_ip
+  value = module.environment.server_ipv4
 }
 
 output "server_ip_v6" {
-  value = module.environment.server_ip_v6
+  value = module.environment.server_ipv6
 }
 
 output "environment" {
