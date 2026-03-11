@@ -10,11 +10,6 @@ data "hcloud_ssh_key" "admin" {
   name     = each.value
 }
 
-moved {
-  from = data.hcloud_ssh_key.root_ssh_key_ids
-  to   = data.hcloud_ssh_key.admin
-}
-
 locals {
   admin_ssh_key_ids     = [for key in data.hcloud_ssh_key.admin : key.id]
   admin_ssh_public_keys = [for key in data.hcloud_ssh_key.admin : key.public_key]

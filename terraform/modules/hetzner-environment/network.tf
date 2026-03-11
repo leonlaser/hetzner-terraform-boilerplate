@@ -11,11 +11,6 @@ resource "hcloud_network_subnet" "environment" {
   ip_range     = "10.0.1.0/24"
 }
 
-moved {
-  from = hcloud_firewall.environment
-  to   = hcloud_firewall.app
-}
-
 resource "hcloud_firewall" "app" {
   name   = "${var.project_name}-${var.environment_name}-app"
   labels = local.firewall_labels
