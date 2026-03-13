@@ -1,0 +1,37 @@
+---
+- name: Database server provisioning
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Write Docker Compose file
+      become: true
+      become_user: docker
+      ansible.builtin.copy:
+        content: "{{ docker_compose_content }}"
+        dest: /home/docker/current/compose.yml
+        owner: docker
+        group: docker
+        mode: "0644"
+      no_log: true
+
+    - name: Write pg-dump script
+      ansible.builtin.copy:
+        src: pg-dump.sh
+        dest: /home/ops/scripts/pg-dump.sh
+        mode: "0755"
+
+    - name: Write pg-restore script
+      ansible.builtin.copy:
+        src: pg-restore.sh
+        dest: /home/ops/scripts/pg-restore.sh
+        owner: ops
+        group: ops
+        mode: "0755"
+
+    - name: Start database
+      become: true
+      become_user: docker
+      ansible.builtin.shell: |
+        cd /home/docker/current && docker compose up -d
+      changed_when: true

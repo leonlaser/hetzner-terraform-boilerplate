@@ -1,0 +1,47 @@
+---
+- name: Backup provisioning
+  hosts: all
+  become: false
+  gather_facts: false
+
+  tasks:
+    - name: Write borg environment file
+      ansible.builtin.copy:
+        content: "{{ borg_env_content }}"
+        dest: /home/ops/.config/borg/env
+        mode: "0600"
+      no_log: true
+
+    - name: Write backup SSH key
+      ansible.builtin.copy:
+        content: "{{ backup_private_key }}"
+        dest: /home/ops/.ssh/backup_key
+        mode: "0600"
+      no_log: true
+
+    - name: Install SSH key on StorageBox
+      ansible.builtin.shell: |
+        echo '{{ backup_public_key | trim }}' | \
+        sshpass -p '{{ storagebox_password }}' ssh -p 23 \
+          -o StrictHostKeyChecking=accept-new \
+          {{ storagebox_user }}@{{ storagebox_host }} install-ssh-key
+      no_log: true
+
+    - name: Create borg repo directory on StorageBox
+      ansible.builtin.command: >
+        ssh -i /home/ops/.ssh/backup_key
+        -o StrictHostKeyChecking=accept-new
+        {{ storagebox_user }}@{{ storagebox_host }}
+        mkdir borg
+      register: mkdir_result
+      failed_when: false
+      changed_when: mkdir_result.rc == 0
+
+    - name: Initialize borg repository
+      ansible.builtin.command: >
+        /home/ops/scripts/borg.sh init
+        --encryption=repokey
+        --remote-path=borg-1.4
+      register: borg_init_result
+      failed_when: false
+      changed_when: borg_init_result.rc == 0

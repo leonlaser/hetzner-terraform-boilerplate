@@ -1,0 +1,105 @@
+#cloud-config
+users:
+
+%{ if length(additional_users) > 0 }
+  # Additional users
+%{ for user in additional_users }
+  - name: ${user.name}
+    groups: ${user.groups}
+    shell: /bin/bash
+    %{ if length(user.ssh_authorized_keys) > 0 }
+    ssh_authorized_keys:
+    %{ for key in user.ssh_authorized_keys }
+      - ${key}
+    %{ endfor }
+    %{ endif }
+%{ endfor }
+%{ endif }
+
+  # Operations User — backups, monitoring, admin SSH
+  - name: ops
+    groups: users
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${ops_public_key}
+%{ for key in ops_ssh_public_keys }
+      - ${key}
+%{ endfor }
+
+write_files:
+  # Instance-specific config for ops scripts (notify email, etc.)
+  - path: /home/ops/.config/server.conf
+    owner: ops:ops
+    permissions: '0600'
+    defer: true
+    content: |
+      NOTIFY_EMAIL=${server_info_mail_to}
+      BACKUP_PATHS=${backup_paths}
+
+  # Configure floating IP
+  - path: /etc/netplan/60-floating-ip.yaml
+    permissions: '0644'
+    content: |
+      ${indent(6, chomp(netplan_config))}
+
+  # SSH Hardening
+  - path: /etc/ssh/sshd_config.d/hardening.conf
+    permissions: '0600'
+    content: |
+      ${indent(6, chomp(sshd_hardening_config))}
+
+  # Auto Upgrades
+  - path: /etc/apt/apt.conf.d/30auto-upgrades
+    permissions: '0644'
+    content: |
+      ${indent(6, chomp(auto_upgrades_config))}
+
+  # Configure msmtp for sending emails (no secrets — password read from ops home)
+  - path: /etc/msmtprc
+    permissions: '0644'
+    content: |
+      ${indent(6, chomp(msmtp_config))}
+
+  # SSH config for ops user
+  - path: /home/ops/.ssh/config
+    owner: ops:ops
+    permissions: '0644'
+    defer: true
+    content: |
+      ${indent(6, chomp(ops_ssh_config))}
+
+runcmd:
+  # Apply floating IP netplan configuration
+  - netplan apply
+
+  # Configure firewall
+  - ufw allow ${ssh_port}
+%{ if length(server_ufw_allowed_ports) > 0 }
+%{ for port in server_ufw_allowed_ports }
+  - ufw allow ${port}
+%{ endfor }
+%{ endif }
+  - ufw enable
+
+  # Apply SSH hardening (new port, PermitRootLogin no, AllowUsers)
+  - systemctl restart ssh
+
+  # Cronjobs (ops user)
+  - su - ops -c 'echo "0 * * * * /home/ops/scripts/check-reboot-required.sh" | crontab -'
+%{ if backup_enabled }
+  - su - ops -c '(crontab -l; echo "30 * * * * sudo /home/ops/scripts/borg-backup.sh") | crontab -'
+%{ endif }
+%{ if length(appended_runcmd) > 0 }
+
+  # Additional commands
+%{ for cmd in appended_runcmd }
+  - ${jsonencode(cmd)}
+%{ endfor }
+%{ endif }
+%{ if swap_size > 0 }
+
+swap:
+  filename: /swapfile
+  size: ${swap_size * 1024 * 1024 * 1024}
+  maxsize: ${swap_size * 1024 * 1024 * 1024}
+%{ endif }
