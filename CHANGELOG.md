@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/leonlaser/hetzner-terraform-boilerplate/compare/v1.0.0...v1.0.1) (2026-03-18)
+
+
+### Bug Fixes
+
+* **ci:** failing retagging of docker images on release ([#8](https://github.com/leonlaser/hetzner-terraform-boilerplate/issues/8)) ([d208798](https://github.com/leonlaser/hetzner-terraform-boilerplate/commit/d20879899710fca4e39e2f248a4e384c468f2f70))
+
 ## 1.0.0 (2026-03-18)
 
 
