@@ -14,5 +14,6 @@ sudo -u docker docker compose exec -T database bash -c 'pg_restore \
 sudo -u docker docker compose exec database rm -rf /tmp/pgdump
 
 sudo -u docker rm -rf "$DUMP_DIR"
+rm -rf "$DUMP_DIR"
 
 echo "pg_restore finished: $(date)"

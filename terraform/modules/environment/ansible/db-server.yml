@@ -21,6 +21,12 @@
         dest: /home/ops/scripts/pg-dump.sh
         mode: "0755"
 
+    - name: Write pg-dump-cleanup script
+      ansible.builtin.copy:
+        src: pg-dump-cleanup.sh
+        dest: /home/ops/scripts/pg-dump-cleanup.sh
+        mode: "0755"
+
     - name: Write pg-restore script
       ansible.builtin.copy:
         src: pg-restore.sh

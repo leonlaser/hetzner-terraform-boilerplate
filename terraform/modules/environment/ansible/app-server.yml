@@ -29,8 +29,13 @@
       ansible.builtin.copy:
         src: pg-dump.sh
         dest: /home/ops/scripts/pg-dump.sh
-        owner: ops
-        group: ops
+        mode: "0755"
+
+    - name: Write pg-dump-cleanup script
+      when: database_ip | default('') | length == 0
+      ansible.builtin.copy:
+        src: pg-dump-cleanup.sh
+        dest: /home/ops/scripts/pg-dump-cleanup.sh
         mode: "0755"
 
     - name: Write pg-restore script
