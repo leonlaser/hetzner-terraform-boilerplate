@@ -47,7 +47,6 @@ The boilerplate **does not cover** topics like:
 
 - [Packer Images](#packer-images)
     - [Building the Images](#building-the-images)
-    - [When to Rebuild](#when-to-rebuild)
 - [Creating a New Environment](#creating-a-new-environment)
     - [Create the Environment Directory](#create-the-environment-directory)
     - [Setup Checklist](#setup-checklist)
@@ -103,19 +102,6 @@ Additional Packer arguments can be passed through:
 ./build.sh base -var 'server_type=cx32'
 ```
 
-### When to Rebuild
-
-Rebuild the images when you change the Packer scripts in `packer/scripts/`:
-
-| Changed file             | Rebuild                 |
-|--------------------------|-------------------------|
-| `scripts/base-setup.sh`   | `base`, then `docker` |
-| `scripts/docker-setup.sh` | `docker` only         |
-| `scripts/upgrade.sh`      | both (for latest OS packages) |
-| `scripts/cleanup.sh`      | both                  |
-
-After building a new `docker` snapshot, existing servers are **not** affected. The new image is used only when a server is created or recreated (e.g. via `tofu apply` after a `taint` or `server_type` change).
-
 ## Creating a New Environment
 
 ### Create the Environment Directory
@@ -142,19 +128,19 @@ If necessary, customize the environment further.
   - [ ] Enable the database server in `2_local.auto.tfvars`.
 - Do you know which users need SSH access to the app server?
   - [ ] Add the public keys manually to the Hetzner Cloud project if not existing yet.
-  - [ ] Set `ops_ssh_key_names` in `2_local.auto.tfvars`.
+  - [ ] Set `ops_ssh_key_names` in `_shared/global.tfvars` (or override per-environment in `2_local.auto.tfvars`).
 
 ### Deploying a New Environment
 
 ```bash
 # 1. Init, check and apply
-./tf.sh foobar init
-./tf.sh foobar plan
-./tf.sh foobar apply
+./tf.sh <env> init
+./tf.sh <env> plan
+./tf.sh <env> apply
 
 # 2. Create DNS records pointing to the floating IPs
-./tf.sh foobar output server_ip      # → A record
-./tf.sh foobar output server_ip_v6   # → AAAA record (use the ::1 address from the /64 block)
+./tf.sh <env> output server_ipv4   # → A record
+./tf.sh <env> output server_ipv6   # → AAAA record (use the ::1 address from the /64 block)
 ```
 
 You must wait until DNS propagates before deploying your application, as Traefik needs to pull TLS certificates.
@@ -164,10 +150,9 @@ You must wait until DNS propagates before deploying your application, as Traefik
 Wrapper around `tofu` that loads secrets and runs commands for a selected environment:
 
 ```bash
-./tf.sh <environment> <command> [args...]
-./tf.sh foobar plan
-./tf.sh foobar apply
-./tf.sh foobar output server_ip
+./tf.sh <env> <command> [args...]
+./tf.sh <env> plan
+./tf.sh <env> apply
 ```
 
 ## Providing Secrets
@@ -187,7 +172,7 @@ The boilerplate assumes you will:
 
 Each environment can override or add environment variables defined in the root `env.sh` by setting those in `terraform/environments/<env-name>/env.sh`.
 
-The boilerplate suggests defining at least `STATE_PASSPHRASE` / `TF_ENCRYPTION` and `TF_VAR_borg_passphrase` per environment. This minimized the if these secrets are leaked.
+The boilerplate suggests defining at least `STATE_PASSPHRASE` / `TF_ENCRYPTION` and `TF_VAR_borg_passphrase` per environment. This minimizes the blast radius if these secrets are leaked.
 
 ## Configuration
 
@@ -202,13 +187,13 @@ Environment-specific overrides are stored in
 `terraform/environments/<env-name>/2_local.auto.tfvars`:
 
 ```hcl
-domain           = "foobar.example.com"
-environment_name = "foobar"
-deploy_branch    = "foobar"
+domain           = "<env>.env.example"
+environment_name = "<env>"
+deploy_branch    = "<env>"
 
 app_env_vars = {
-  MAIL_FROM   = "info@foobar.example.com"
-  ADMIN_EMAIL = "sysadmin@example.com"
+  MAIL_FROM   = "info@env.example"
+  ADMIN_EMAIL = "sysadmin@env.example"
 }
 
 # Optional: Borg backups to Hetzner StorageBox
@@ -266,27 +251,27 @@ If you need to pass API keys, login credentials, or other secrets to your applic
   `base_env_vars` for all environments or in `terraform/environments/<env>/2_local.auto.tfvars` in
   `app_env_vars` for a specific environment.
 
-After `./tf.sh apply <env>`, the variable will be available after your next deployment via GitHub.
+After `./tf.sh <env> apply`, the variable will be available after your next deployment via GitHub.
 
 ## Accessing Generated Credentials and Values
 
 Dynamic SSH Port:
 
 ```bash
-./tf.sh foobar output ssh_port
+./tf.sh <env> output ssh_port
 ```
 
 IP addresses:
 
 ```bash
-./tf.sh foobar output server_ipv4
-./tf.sh foobar output server_ipv6
+./tf.sh <env> output server_ipv4
+./tf.sh <env> output server_ipv6
 ```
 
 Traefik dashboard credentials are auto-generated per environment (username: `admin`):
 
 ```bash
-./tf.sh foobar output traefik_dashboard_password
+./tf.sh <env> output traefik_dashboard_password
 ```
 
 ## Application Server Structure
@@ -305,11 +290,10 @@ The server has three users with different roles:
 - Secrets are provisioned via Ansible after cloud-init completes
 - Backups, monitoring scripts, and crontabs are owned by `ops` under `~/scripts/` and `~/logs/`
 - Compose files, `.env`, traefik config, and letsencrypt certs live in `/home/docker/current`
-- Database data is stored separately at `/home/docker/postgresql` and not backed up directly
 
 ## Backups (Borg + Hetzner StorageBox)
 
-Setting the `backup` variable enables automated Borg backups of `/home/docker/current`. When a PostgreSQL database is present (dedicated DB server or app-local), `pg_dump` runs automatically before Borg to create a consistent dump. Database data lives at `/home/docker/postgresql`, outside the backup path, so only the dump is archived.
+Setting the `backup` variable enables automated Borg backups of `/home/docker/current`. When a PostgreSQL database is present (dedicated DB server or app-local), `pg_dump` runs automatically before Borg to create a consistent dump.
 
 **Retention:** 48 hourly, 7 daily, 4 weekly, 6 monthly, 1 yearly.
 
@@ -321,7 +305,7 @@ SSH key installation on the StorageBox and borg repository initialization happen
 
 ```bash
 # 1. Login as ops
-ssh ops@<foobar-ip> -p <foobar-ssh-port>
+ssh ops@<env-ip> -p <env-ssh-port>
 # 2. Execute the backup script
 sudo ~/scripts/borg-backup.sh
 # 3. Verify the logs show no errors
@@ -332,7 +316,7 @@ cat ~/logs/borg-backup.log
 # === Backup finished: Mon Feb 23 03:30:03 PM UTC 2026 ===
 ```
 
-Each environment gets its own StorageBox **subaccount** created by terraform in a new subfolder structure: `<project>/<environment>/`. Each server's borg repo lives at `./borg` within the subaccount.
+Each server gets its own StorageBox subaccount with a directory path of `<project>/<environment>/<server_name>`. The borg repo lives at `./borg` within the subaccount. When both app and database servers have backups enabled, two separate subaccounts are created (e.g., `myproject/prod/app` and `myproject/prod/db`)
 
 ### Borg Helper Script
 
@@ -341,7 +325,7 @@ Every server with backups enabled gets `~/scripts/borg.sh` (owned by `ops`) — 
 
 ```bash
 # Login as ops
-ssh ops@<foobar-ip> -p <foobar-ssh-port>
+ssh ops@<env-ip> -p <env-ssh-port>
 
 # List all archives
 ~/scripts/borg.sh list
@@ -384,7 +368,7 @@ Backups cover `/home/docker/current` (compose files, `.env`, traefik config, let
 
 ```bash
 # 1. SSH into the server as ops
-ssh ops@<foobar-ip> -p <foobar-ssh-port>
+ssh ops@<env-ip> -p <env-ssh-port>
 
 # 2. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
 sudo ~/scripts/borg-backup.sh
@@ -475,7 +459,7 @@ Full recovery procedure after server loss:
 
 ## Server Replacement Safety
 
-When changing `server_type` or `location`, the module protects against data corruption and misconfiguration. Before destroying the existing server, OpenTofu verifies that the requested server type is available and not deprecated at the target location.
+When changing `server_type` or `location`, the module protects against data corruption and misconfiguration. During `plan` and `apply`, a lifecycle precondition verifies that the requested server type is available and not deprecated at the target location. If validation fails, the plan is rejected before any changes are made.
 
 ## Directory Structure
 
@@ -483,15 +467,20 @@ When changing `server_type` or `location`, the module protects against data corr
 ├── tf.sh                    # CLI wrapper (tofu)
 ├── build.sh                 # CLI wrapper (packer)
 ├── env.sh                   # Global secrets (gitignored)
+├── .github/workflows/       # CI/CD pipelines (build, deploy)
+├── docker/                  # Docker Compose files and example services
 ├── packer/                  # Packer image definitions
 │   ├── base.pkr.hcl         # Base image (Ubuntu + ops user + security)
 │   ├── docker.pkr.hcl       # Docker image (base + rootless Docker)
-│   └── scripts/             # Provisioning scripts for images
+│   └── ansible/             # Ansible playbooks and roles for image provisioning
+│       ├── base.yml          # Playbook for base image
+│       ├── docker.yml        # Playbook for docker image
+│       └── roles/            # Ansible roles (base, docker, upgrade, cleanup, finalize)
 └── terraform/
     ├── environments/
     │   ├── _shared/         # Symlinked into each environment
     │   ├── _example/        # Template for new environments
-    │   └── foobar/          # An active environment
+    │   └── <env>/           # Active environments
     └── modules/
         ├── environment/     # Reusable environment module
         └── server/          # Base server module (Packer image + Ansible provisioning)
