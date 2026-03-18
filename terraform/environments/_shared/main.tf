@@ -88,11 +88,11 @@ module "environment" {
   )
 }
 
-output "server_ip" {
+output "server_ipv4" {
   value = module.environment.server_ipv4
 }
 
-output "server_ip_v6" {
+output "server_ipv6" {
   value = module.environment.server_ipv6
 }
 

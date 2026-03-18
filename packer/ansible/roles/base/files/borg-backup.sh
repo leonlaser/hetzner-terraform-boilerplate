@@ -48,6 +48,12 @@ PGDUMP_SCRIPT="$OPS_HOME/scripts/pg-dump.sh"
     "::$BACKUP_NAME" \
     $BACKUP_PATHS
 
+  # Post-backup hook: cleanup (if configured)
+  PGDUMP_CLEANUP_SCRIPT="$OPS_HOME/scripts/pg-dump-cleanup.sh"
+  if [ -x "$PGDUMP_CLEANUP_SCRIPT" ]; then
+    "$PGDUMP_CLEANUP_SCRIPT"
+  fi
+
   # Prune old backups
   borg prune \
     --keep-hourly 48 \

@@ -5,4 +5,7 @@ services:
   database:
     restart: unless-stopped
     volumes:
-      - ${DB_VOLUME}:/var/lib/postgresql
+      - pgdata:/var/lib/postgresql
+
+volumes:
+  pgdata:

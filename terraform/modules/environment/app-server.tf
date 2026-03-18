@@ -23,13 +23,14 @@ module "app-server" {
 
   floating_ips_enabled = true
   floating_ip_location = coalesce(var.floating_ip_location, var.location)
+  floating_ip_protection = var.delete_protection.floating_ip
 
   private_network_enabled = true
   private_network_id      = hcloud_network.environment.id
   private_network_ip      = local.internal_ips.app
 
-  backup_enabled        = true
-  backup_storage_box_id = var.backup.storage_box_id
+  backup_enabled        = var.backup != null
+  backup_storage_box_id = var.backup != null ? var.backup.storage_box_id : 0
   backup_passphrase     = var.borg_passphrase
   backup_paths          = "/home/docker/current"
 
