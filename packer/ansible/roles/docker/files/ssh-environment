@@ -1,0 +1,2 @@
+XDG_RUNTIME_DIR=/run/user/1000
+DOCKER_HOST=unix:///run/user/1000/docker.sock

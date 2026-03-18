@@ -1,0 +1,8 @@
+---
+- name: Base server setup
+  hosts: all
+  gather_facts: true
+  roles:
+    - base
+    - upgrade
+    - cleanup

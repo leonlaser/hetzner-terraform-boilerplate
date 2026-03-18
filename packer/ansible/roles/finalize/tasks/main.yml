@@ -1,0 +1,5 @@
+---
+- name: Remove apt package lists
+  ansible.builtin.file:
+    path: /var/lib/apt/lists
+    state: absent

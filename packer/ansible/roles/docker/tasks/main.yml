@@ -1,0 +1,156 @@
+---
+- name: Create APT keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Add Docker APT repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/docker.sources
+    content: |
+      Types: deb
+      URIs: https://download.docker.com/linux/ubuntu
+      Suites: {{ ansible_distribution_release }}
+      Components: stable
+      Signed-By: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Install Docker packages
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - docker-compose-plugin
+      - uidmap
+      - dbus-user-session
+    state: present
+    update_cache: true
+
+- name: Configure sysctl for rootless Docker
+  ansible.builtin.copy:
+    src: 99-docker-rootless.conf
+    dest: /etc/sysctl.d/99-docker-rootless.conf
+    mode: "0644"
+
+- name: Apply sysctl settings
+  ansible.builtin.command: sysctl --system
+  changed_when: true
+
+- name: Create docker user
+  ansible.builtin.user:
+    name: docker
+    uid: 1000
+    shell: /bin/bash
+    group: docker
+    groups: users
+
+- name: Configure subuid for docker user
+  ansible.builtin.lineinfile:
+    path: /etc/subuid
+    line: "docker:100000:65536"
+
+- name: Configure subgid for docker user
+  ansible.builtin.lineinfile:
+    path: /etc/subgid
+    line: "docker:100000:65536"
+
+- name: Copy Docker environment file
+  ansible.builtin.copy:
+    src: docker-env
+    dest: /home/docker/.docker-env
+    owner: docker
+    group: docker
+    mode: "0644"
+
+- name: Source Docker env in .profile
+  ansible.builtin.lineinfile:
+    path: /home/docker/.profile
+    line: ". ~/.docker-env"
+
+- name: Source Docker env in .bashrc
+  ansible.builtin.lineinfile:
+    path: /home/docker/.bashrc
+    line: ". ~/.docker-env"
+
+- name: Disable rootful Docker
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - docker.service
+    - docker.socket
+  failed_when: false
+
+- name: Remove rootful Docker socket
+  ansible.builtin.file:
+    path: /var/run/docker.sock
+    state: absent
+
+- name: Enable linger for docker user
+  ansible.builtin.command: loginctl enable-linger docker
+  changed_when: true
+
+- name: Wait for user manager to be ready
+  ansible.builtin.pause:
+    seconds: 2
+
+- name: Install rootless Docker
+  ansible.builtin.command:
+    cmd: >-
+      systemd-run --machine=docker@ --user --pipe --wait
+      /usr/bin/dockerd-rootless-setuptool.sh install
+  changed_when: true
+
+- name: Enable rootless Docker service
+  ansible.builtin.command:
+    cmd: >-
+      systemd-run --machine=docker@ --user --pipe --wait
+      /usr/bin/systemctl --user enable docker
+  changed_when: true
+
+- name: Create docker .ssh directory
+  ansible.builtin.file:
+    path: /home/docker/.ssh
+    state: directory
+    owner: docker
+    group: docker
+    mode: "0700"
+
+- name: Copy SSH environment file
+  ansible.builtin.copy:
+    src: ssh-environment
+    dest: /home/docker/.ssh/environment
+    owner: docker
+    group: docker
+    mode: "0600"
+
+- name: Set docker home directory permissions
+  ansible.builtin.file:
+    path: /home/docker
+    mode: "0750"
+
+- name: Add ops user to docker group
+  ansible.builtin.user:
+    name: ops
+    groups: docker
+    append: true
+
+- name: Add dkr function to ops bashrc
+  ansible.builtin.lineinfile:
+    path: /home/ops/.bashrc
+    line: 'dkr() { cd /home/docker/current && sudo -u docker "$@"; cd - }'
+
+- name: Configure Docker sudoers for ops
+  ansible.builtin.copy:
+    src: docker-sudoers
+    dest: /etc/sudoers.d/docker
+    mode: "0440"
+    validate: visudo -cf %s
