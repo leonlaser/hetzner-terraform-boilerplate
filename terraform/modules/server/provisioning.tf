@@ -20,11 +20,14 @@ locals {
   provision_files_hash = sha256(join("", [
     filesha256("${path.module}/ansible/provision.yml"),
     filesha256("${path.module}/ansible/files/check-reboot-required.sh"),
+    filesha256("${path.module}/ansible/files/check-disk-space.sh"),
+    filesha256("${path.module}/ansible/files/docker-cleanup.sh"),
   ]))
 
   backup_files_hash = sha256(join("", [
     filesha256("${path.module}/ansible/backup.yml"),
     filesha256("${path.module}/ansible/files/backup.sh"),
+    filesha256("${path.module}/ansible/files/restore.sh"),
     filesha256("${path.module}/ansible/files/borg.sh"),
   ]))
 

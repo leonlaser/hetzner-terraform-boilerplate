@@ -58,6 +58,12 @@
       failed_when: false
       changed_when: borg_init_result.rc == 0
 
+    - name: Copy restore wrapper script
+      ansible.builtin.copy:
+        src: restore.sh
+        dest: /home/ops/scripts/restore.sh
+        mode: "0755"
+
     - name: Configure backup crontab
       ansible.builtin.cron:
         name: "borg backup"

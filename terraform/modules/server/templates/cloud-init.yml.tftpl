@@ -35,6 +35,7 @@ write_files:
     content: |
       NOTIFY_EMAIL=${server_info_mail_to}
       BACKUP_PATHS=${backup_paths}
+      DISK_THRESHOLD=${disk_threshold}
 
   # Configure floating IP
   - path: /etc/netplan/60-floating-ip.yaml

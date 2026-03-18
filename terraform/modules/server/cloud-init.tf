@@ -11,6 +11,7 @@ locals {
     backup_paths             = var.backup_paths
     server_ufw_allowed_ports = var.server_ufw_allowed_ports
     server_info_mail_to      = var.server_info_mail_to
+    disk_threshold           = var.disk_threshold
 
     appended_runcmd = var.cloud_init_runcmd
 
