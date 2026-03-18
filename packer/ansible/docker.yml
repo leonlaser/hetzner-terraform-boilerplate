@@ -1,0 +1,9 @@
+---
+- name: Docker server setup
+  hosts: all
+  gather_facts: true
+  roles:
+    - docker
+    - upgrade
+    - cleanup
+    - finalize

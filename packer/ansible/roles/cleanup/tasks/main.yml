@@ -1,0 +1,93 @@
+---
+- name: Clean cloud-init state
+  ansible.builtin.command: cloud-init clean --logs --machine-id --seed --configs all
+  failed_when: false
+  changed_when: true
+
+- name: Remove cloud-init runtime data
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /run/cloud-init
+    - /var/lib/cloud
+
+- name: Remove unused packages
+  ansible.builtin.apt:
+    autoremove: true
+    purge: true
+
+- name: Clean apt cache
+  ansible.builtin.command: apt-get clean
+  changed_when: true
+
+- name: Find SSH host keys
+  ansible.builtin.find:
+    paths: /etc/ssh
+    patterns: "ssh_host_*"
+  register: ssh_host_keys
+
+- name: Remove SSH host keys
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ ssh_host_keys.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Flush and rotate journal
+  ansible.builtin.command: journalctl --flush --rotate --vacuum-time=0
+  failed_when: false
+  changed_when: true
+
+- name: Find archived log files
+  ansible.builtin.find:
+    paths: /var/log
+    patterns:
+      - "*.gz"
+      - "*.xz"
+      - "*.[0-9]"
+    recurse: true
+  register: archived_logs
+
+- name: Remove archived log files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ archived_logs.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Find all log files
+  ansible.builtin.find:
+    paths: /var/log
+    file_type: file
+    recurse: true
+  register: log_files
+
+- name: Truncate all log files
+  ansible.builtin.command: "truncate -s 0 {{ item.path }}"
+  loop: "{{ log_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  changed_when: true
+
+- name: Remove root home caches and history
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /root/.cache
+    - /root/.ssh
+    - /root/.bash_history
+    - /root/.lesshst
+    - /root/.viminfo
+
+- name: Trim filesystem
+  ansible.builtin.command: fstrim --all
+  failed_when: false
+  changed_when: true
+
+- name: Sync filesystem
+  ansible.builtin.command: sync
+  changed_when: false

@@ -18,11 +18,14 @@ While the boilerplate should be adapted to your own needs, it is designed to be 
 - [GitHub](https://github.com/) for CI/CD
 - Any SMTP E-Mail server for sending status emails
 - [OpenTofu](https://opentofu.org/) as a drop-in replacement for `terraform` to make use of local state encryption
+- [Ansible](https://docs.ansible.com/) for provisioning images and servers
+- [Packer](https://www.packer.io/) for building server images
 - [Docker Compose](https://docs.docker.com/compose/) for configuring and running the application
 - [PostgreSQL](https://www.postgresql.org/) as the application database
 - [Borg](https://www.borgbackup.org/) for automated backups
 - [Traefik](https://github.com/traefik/traefik) as a reverse proxy and for TLS termination
-- Bash for executing the `tf.sh` and `env.sh` helper scripts
+- Any SMTP email server for sending status emails
+- Bash for executing wrapper scripts for ease of use
 
 #### Disclaimer
 
@@ -183,7 +186,7 @@ The boilerplate assumes you will:
 
 Each environment can override or add environment variables defined in the root `env.sh` by setting those in `terraform/environments/<env-name>/env.sh`.
 
-The boilerplate suggests defining at least `STATE_PASSPHRASE` / `TF_ENCRYPTION` per environment. By doing so, a leaked state passphrase for a staging environment cannot be used to gain access to production secrets.
+The boilerplate suggests defining at least `STATE_PASSPHRASE` / `TF_ENCRYPTION` and `TF_VAR_borg_passphrase` per environment. This minimized the if these secrets are leaked.
 
 ## Configuration
 

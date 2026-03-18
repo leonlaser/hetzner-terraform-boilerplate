@@ -1,0 +1,1 @@
+ops ALL=(docker) NOPASSWD: ALL

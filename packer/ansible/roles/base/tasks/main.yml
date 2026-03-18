@@ -1,0 +1,92 @@
+---
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - fail2ban
+      - ufw
+      - unattended-upgrades
+      - msmtp
+      - msmtp-mta
+      - borgbackup
+      - sshpass
+      - lsb-release
+      - systemd-container
+    state: present
+    update_cache: true
+
+- name: Remove default ubuntu user
+  ansible.builtin.user:
+    name: ubuntu
+    state: absent
+    remove: true
+  failed_when: false
+
+- name: Create ops user
+  ansible.builtin.user:
+    name: ops
+    uid: 1001
+    shell: /bin/bash
+    groups: users
+
+- name: Configure fail2ban
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/jail.local
+    content: |
+      [sshd]
+      enabled = true
+      maxretry = 3
+      bantime = 3600
+    mode: "0644"
+
+- name: Create ops directory structure
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: ops
+    group: ops
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /home/ops/.config/borg, mode: "0700" }
+    - { path: /home/ops/.ssh, mode: "0700" }
+    - { path: /home/ops/logs, mode: "0755" }
+    - { path: /home/ops/scripts, mode: "0755" }
+
+- name: Copy borg helper script
+  ansible.builtin.copy:
+    src: borg.sh
+    dest: /home/ops/scripts/borg.sh
+    owner: ops
+    group: ops
+    mode: "0755"
+
+- name: Copy check-reboot-required script
+  ansible.builtin.copy:
+    src: check-reboot-required.sh
+    dest: /home/ops/scripts/check-reboot-required.sh
+    owner: ops
+    group: ops
+    mode: "0755"
+
+- name: Copy borg-backup script
+  ansible.builtin.copy:
+    src: borg-backup.sh
+    dest: /home/ops/scripts/borg-backup.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Copy borg-restore script
+  ansible.builtin.copy:
+    src: borg-restore.sh
+    dest: /home/ops/scripts/borg-restore.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure sudoers for ops
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/ops
+    content: |
+      ops ALL=(root) NOPASSWD: /home/ops/scripts/borg-backup.sh, /home/ops/scripts/borg-restore.sh
+    mode: "0440"
+    validate: visudo -cf %s

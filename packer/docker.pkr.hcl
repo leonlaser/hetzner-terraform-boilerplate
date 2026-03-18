@@ -4,6 +4,10 @@ packer {
       source  = "github.com/hetznercloud/hcloud"
       version = "~> 1"
     }
+    ansible = {
+      source  = "github.com/hashicorp/ansible"
+      version = "~> 1"
+    }
   }
 }
 
@@ -69,11 +73,8 @@ build {
     valid_exit_codes = [0, 2]
   }
 
-  provisioner "shell" {
-    scripts = [
-      "${path.root}/scripts/docker-setup.sh",
-      "${path.root}/scripts/upgrade.sh",
-      "${path.root}/scripts/cleanup.sh",
-    ]
+  provisioner "ansible" {
+    playbook_file = "${path.root}/ansible/docker.yml"
+    roles_path    = "${path.root}/ansible/roles"
   }
 }
