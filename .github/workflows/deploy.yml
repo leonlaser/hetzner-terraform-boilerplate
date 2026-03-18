@@ -10,10 +10,9 @@ on:
         options:
           - test # TODO: Change to your environments
       image_tag:
-        description: 'Image tag to deploy'
-        required: true
+        description: 'Image tag to deploy - will default to the latest commit SHA'
+        required: false
         type: string
-        default: latest
   workflow_call:
     inputs:
       environment:
@@ -55,7 +54,7 @@ jobs:
       - name: Deploy .env
         run: |
           printf '%s' "$APP_ENV" > .env.tmp
-          printf '\nIMAGE_TAG=%s\n' "${{ inputs.image_tag }}" >> .env.tmp
+          printf '\nIMAGE_TAG=%s\n' "${{ inputs.image_tag || github.sha }}" >> .env.tmp
           printf 'COMPOSE_FILE=%s\n' "${{ steps.compose.outputs.files }}" >> .env.tmp
           scp -i ~/.ssh/deploy_key -P ${{ secrets.APP_SERVER_SSH_PORT }} \
             .env.tmp \

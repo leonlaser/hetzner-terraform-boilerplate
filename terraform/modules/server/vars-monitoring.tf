@@ -29,3 +29,9 @@ variable "server_info_mail_to" {
   type        = string
   description = "Email address for unattended-upgrades and server reboot notifications"
 }
+
+variable "disk_threshold" {
+  type        = number
+  default     = 90
+  description = "Disk usage percentage threshold for email alerts (0-100)"
+}

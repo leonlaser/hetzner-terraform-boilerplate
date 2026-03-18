@@ -35,7 +35,7 @@ While this boilerplate will set up and provision servers with some security aspe
 The boilerplate **does not cover** topics like:
 
 - Centralized logging
-- Monitoring (besides rudimentary status emails for security updates)
+- Monitoring (besides disk space alerts and reboot notifications via email)
 - IDS/IPS (besides a very basic `fail2ban` SSH configuration)
 - Advanced Firewalling (e.g. WAF, DDoS protection)
 - Advanced Network security (e.g. mTLS, VPN)
@@ -65,6 +65,7 @@ The boilerplate **does not cover** topics like:
     - [External Secrets as Environment Variables](#external-secrets-as-environment-variables)
 - [Accessing Generated Credentials and Values](#accessing-generated-credentials-and-values)
 - [Application Server Structure](#application-server-structure)
+  - [Server Monitoring & Housekeeping](#server-monitoring--housekeeping)
 - [Backups (Borg + Hetzner StorageBox)](#backups-borg--hetzner-storagebox)
     - [Borg Helper Script](#borg-helper-script)
     - [PostgreSQL Backups (pg_dump)](#postgresql-backups-pg_dump)
@@ -289,7 +290,18 @@ The server has three users with different roles:
 - Cloud-init is only used for basic setup
 - Secrets are provisioned via Ansible after cloud-init completes
 - Backups, monitoring scripts, and crontabs are owned by `ops` under `~/scripts/` and `~/logs/`
+- Logs in `~/logs/` are rotated weekly (4 compressed copies) via system logrotate
 - Compose files, `.env`, traefik config, and letsencrypt certs live in `/home/docker/current`
+
+### Server Monitoring & Housekeeping
+
+| Script                     | Schedule       | Description                                                   |
+|----------------------------|----------------|---------------------------------------------------------------|
+| `check-reboot-required.sh` | Hourly         | Sends one-time email when a reboot is pending                 |
+| `check-disk-space.sh`      | Every 15 min   | Sends email when usage exceeds threshold (default 90%)        |
+| `docker-cleanup.sh`        | Daily at 03:00 | Prunes dangling Docker images and build cache older than 24h. |
+
+The disk space threshold is configurable via the `disk_threshold` variable (passed to the server module). It defaults to 90% and is written to `server.conf` on the server.
 
 ## Backups (Borg + Hetzner StorageBox)
 
@@ -307,7 +319,7 @@ SSH key installation on the StorageBox and borg repository initialization happen
 # 1. Login as ops
 ssh ops@<env-ip> -p <env-ssh-port>
 # 2. Execute the backup script
-sudo ~/scripts/borg-backup.sh
+~/scripts/backup.sh
 # 3. Verify the logs show no errors
 cat ~/logs/borg-backup.log
 
@@ -339,8 +351,8 @@ ssh ops@<env-ip> -p <env-ssh-port>
 
 Ansible's `borg init` uses this helper internally. The automated backup script (`borg-backup.sh`) parses the borg env directly for security (runs as root via sudo, only accepts `BORG_REPO` and `BORG_PASSPHRASE`).
 
-> **Note:** For extracting archives, use `sudo ~/scripts/borg-restore.sh` instead of `borg.sh extract`.
-> The restore script runs as root via sudo, which is required to write to `docker`-owned directories
+> **Note:** For restoring a previous backup use `restore.sh` instead of `borg.sh extract`.
+> The restore script will run borg as root, which is required to write to `docker`-owned directories
 > and to restore correct file ownership.
 
 ### PostgreSQL Backups (pg_dump)
@@ -366,47 +378,45 @@ Backups cover `/home/docker/current` (compose files, `.env`, traefik config, let
 
 #### How to restore a full backup
 
+The `~/scripts/restore.sh` wrapper automatically pauses backups during the restore and resumes them on exit (including Ctrl+C). It passes all arguments to the root-owned `borg-restore.sh`.
+
+Restoring the database is a separate step to manually orchestrate restoring the database and starting the application or to skip it entirely.
+
 ```bash
 # 1. SSH into the server as ops
 ssh ops@<env-ip> -p <env-ssh-port>
 
 # 2. Optional: Create a backup of the current state before restoring, if not done before (via deployment etc.)
-sudo ~/scripts/borg-backup.sh
+# ~/scripts/backup.sh
 
-# 3. Pause automatic backups (prevents the hourly backup from interfering with the restore)
-touch ~/.backup-paused
+# 3. List available archives to find the one you want
+~/scripts/restore.sh
 
-# 4. List available archives to find the one you want
-sudo ~/scripts/borg-restore.sh
-
-# 5. Stop the running application
+# 4. Stop the running application
 dkr docker compose down
 
-# 6. Extract the archive over the existing data - this will also extract the database dump to /home/docker/current/pgdump
-sudo ~/scripts/borg-restore.sh <archive-name>
+# 5. Extract the archive over the existing data - this will also extract the database dump to /home/docker/current/pgdump
+~/scripts/restore.sh <archive-name>
 
-# 7. Either start and restore the database ...
+# 6. Either start and restore the database ...
 dkr docker compose up -d database
 ~/scripts/pg-restore.sh
 
 # ... or delete the extracted database dump
 rm -rf /home/docker/current/pgdump
 
-# 8. Start the application again
+# 7. Start the application again
 dkr docker compose up -d
-
-# 9. Resume automatic backups
-rm ~/.backup-paused
 ```
 
-> **Note:** After server recreation (new server = empty disk), trigger a re-deployment from CI to pull the necessary docker images. The image tag you need to deploy for the restored backup is available in the restored `.env` file.
+> **Note:** After server recreation or after docker pruned unused images, trigger a re-deployment from CI to pull the necessary docker images. The image tag you need to deploy for the restored backup is available in the restored `.env` file.
 
 #### Restoring only specific files or directories
 
 Use `~/scripts/borg.sh list ::<archive-name>` to see the exact paths, then extract only what you need:
 
 ```bash
-sudo ~/scripts/borg-restore.sh <archive-name> home/docker/current/letsencrypt
+~/scripts/restore.sh <archive-name> home/docker/current/letsencrypt
 ```
 
 #### Restoring the PostgreSQL dump from a borg archive
@@ -415,11 +425,11 @@ The `pg_dump` output is stored at `home/docker/current/pgdump/` in the archive (
 
 ```bash
 # 1. List all available backups to select what want to restore
-sudo ~/scripts/borg-restore.sh
+~/scripts/restore.sh
 
 # 2. Extract the pg_dump from the archive
 #    If you already extracted the whole archive, you can skip this
-sudo ~/scripts/borg-restore.sh <archive-name> home/docker/current/pgdump
+~/scripts/restore.sh <archive-name> home/docker/current/pgdump
 
 # 3. Restore the whole database
 ~/scripts/pg-restore.sh
@@ -428,13 +438,13 @@ sudo ~/scripts/borg-restore.sh <archive-name> home/docker/current/pgdump
 If you want to restore only specific tables, you can do the restore process manually:
 
 ```bash
-# 1. List dumps and extract a dump from a backup archive
-sudo ~/scripts/borg-restore.sh
-sudo ~/scripts/borg-restore.sh <archive-name> home/docker/current/pgdump
+# 1. List archives and extract a dump
+~/scripts/restore.sh
+~/scripts/restore.sh <archive-name> home/docker/current/pgdump
 
 # 2. Copy the database dump into the container
 dkr docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && mkdir -p /tmp/pgdump'
-tar cf - -C /home/docker/current/pgdump . | dkr docker compose exec -T database bash -c 'tar xf - -C /tmp/pgdump'
+dkr tar cf - -C /home/docker/current/pgdump . | dkr docker compose exec -T database bash -c 'tar xf - -C /tmp/pgdump'
 
 # 3. Restore a single table
 dkr docker compose exec -T database pg_restore --list /tmp/pgdump | grep 'TABLE DATA'
@@ -444,7 +454,7 @@ dkr docker compose exec -T database bash -c 'pg_restore\
   /tmp/pgdump'
 
 # 4. Cleanup
-rm -rf /home/docker/current/pgdump
+dkr rm -rf /home/docker/current/pgdump
 dkr docker compose exec database rm -rf /tmp/pgdump
 ```
 

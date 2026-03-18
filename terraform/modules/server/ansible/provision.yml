@@ -41,3 +41,28 @@
         name: "check reboot required"
         minute: "0"
         job: "/home/ops/scripts/check-reboot-required.sh"
+
+    - name: Copy check-disk-space script
+      ansible.builtin.copy:
+        src: check-disk-space.sh
+        dest: /home/ops/scripts/check-disk-space.sh
+        mode: "0755"
+
+    - name: Configure check-disk-space crontab
+      ansible.builtin.cron:
+        name: "check disk space"
+        minute: "*/15"
+        job: "/home/ops/scripts/check-disk-space.sh"
+
+    - name: Copy docker-cleanup script
+      ansible.builtin.copy:
+        src: docker-cleanup.sh
+        dest: /home/ops/scripts/docker-cleanup.sh
+        mode: "0755"
+
+    - name: Configure docker-cleanup crontab
+      ansible.builtin.cron:
+        name: "docker cleanup"
+        minute: "0"
+        hour: "3"
+        job: "/home/ops/scripts/docker-cleanup.sh"

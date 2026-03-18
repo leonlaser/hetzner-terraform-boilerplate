@@ -75,6 +75,14 @@
     group: root
     mode: "0755"
 
+- name: Install ops logrotate config
+  ansible.builtin.copy:
+    src: ops-logrotate.conf
+    dest: /etc/logrotate.d/ops-logs
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Configure sudoers for ops
   ansible.builtin.copy:
     dest: /etc/sudoers.d/ops
