@@ -1,22 +1,23 @@
 # Hetzner Terraform Boilerplate
 
-A boilerplate for deploying containerized applications on Hetzner Cloud with Docker. It is the result of extracting the most basic parts of multiple production environments.
+A boilerplate for deploying containerized applications on Hetzner Cloud with Docker.
 
-The aim is to:
+## What is it for?
 
 - document a way of bootstrapping and deploying infrastructure and applications
-- provide some utility scripts to help backup and restore tasks
-- keep the complexity as low as possible, so it can be understood more easily and adapted to your own needs
+- provide some utilities to help with common tasks like interacting with docker compose and handling backup and restore
+- keeping abstraction and tooling as simple as possible so it stays
+  - understandable for users for Docker, Terraform, Ansible, Packer and Hetzner Cloud
+  - adaptable to custom requirements
 
-## Prerequisites
+## Dependencies
 
 While the boilerplate should be adapted to your own needs, it is designed to be used with:
 
-- [Hetzner Cloud](https://www.hetzner.com/cloud)
+- [Hetzner Cloud](https://www.hetzner.com/cloud) providing VPS servers
 - [Hetzner S3](https://www.hetzner.com/de/storage/object-storage/) as a Terraform state storage
 - [Hetzner StorageBox](https://www.hetzner.com/de/storage/storage-box/) for storing backups
 - [GitHub](https://github.com/) for CI/CD
-- Any SMTP E-Mail server for sending status emails
 - [OpenTofu](https://opentofu.org/) as a drop-in replacement for `terraform` to make use of local state encryption
 - [Ansible](https://docs.ansible.com/) for provisioning images and servers
 - [Packer](https://www.packer.io/) for building server images
@@ -42,9 +43,8 @@ The boilerplate **does not cover** topics like:
 - Supply chain security
 - Hardening of the application itself
 
-## Table of Contents
+## Overview
 
-- [Prerequisites](#prerequisites)
 - [Packer Images](#packer-images)
     - [Building the Images](#building-the-images)
     - [When to Rebuild](#when-to-rebuild)
@@ -130,14 +130,15 @@ Replace all `[REPLACE_ME]` placeholders in:
 - [ ] backend.hcl (state storage endpoint, bucket, key)
 - [ ] 2_local.auto.tfvars (domain, environment name, deploy branch, etc.)
 - [ ] env.sh.example (rename to env.sh, fill in state passphrase)
-- [ ] if necessary, customize the environment further
+
+If necessary, customize the environment further.
 
 ### Setup Checklist
 
 - Do you need backups?
   - [ ] Have a StorageBox setup and ready in the same Hetzner Cloud project.
   - [ ] Enable backups in `2_local.auto.tfvars`.
-- Do you need a dedicated database server, or is it okay to run the database on the app server?
+- Do you need a dedicated database server, or shall the database service run on the app server?
   - [ ] Enable the database server in `2_local.auto.tfvars`.
 - Do you know which users need SSH access to the app server?
   - [ ] Add the public keys manually to the Hetzner Cloud project if not existing yet.
@@ -154,9 +155,9 @@ Replace all `[REPLACE_ME]` placeholders in:
 # 2. Create DNS records pointing to the floating IPs
 ./tf.sh foobar output server_ip      # → A record
 ./tf.sh foobar output server_ip_v6   # → AAAA record (use the ::1 address from the /64 block)
-
-# IMPORTANT: Wait until DNS propagates before deploying your application, as Traefik needs to pull TLS certs.
 ```
+
+You must wait until DNS propagates before deploying your application, as Traefik needs to pull TLS certificates.
 
 ## tf.sh
 
@@ -216,19 +217,13 @@ backup = {
 }
 ```
 
-All variables set in `terraform/environments/_shared/global.tfvars` can be overridden. For example to set a more cost-efficient `server_type` for a staging environment and a more performant `server_type` for a production environment.
+All variables set in `terraform/environments/_shared/global.tfvars` can be overridden in `2_local.auto.tfvars`. For example, to set a more cost-efficient `server_type` for a staging environment and a more performant `server_type` for a production environment.
 
 #### Dedicated Database Server (Optional)
 
 By default, PostgreSQL runs as a Docker service on the app server. For production environments, you can optionally run PostgreSQL on a dedicated server that is only accessible via the internal network.
 
-Benefits:
-
-- Database server can scale independently of the app server
-- Database isolated from public-facing app server (reduced blast radius)
-- Automatic backup when `backup` is set (shared StorageBox subaccount, separate borg repo)
-- DB server has no public IP — only reachable via internal network (`10.0.1.20`)
-- Both servers use the same Packer image and `server` module — DB-specific setup via Ansible
+By doing so, the database server can scale independently of the app server and is isolated from the public network.
 
 ```hcl
 database = {
@@ -240,36 +235,30 @@ When `database` is set, the app server's `DB_HOST` is automatically overridden t
 
 DB backup is automatic when both `backup` and `database` are set — each server gets its own StorageBox subaccount with a borg repo at `./borg`.
 
-**Post-apply steps (when database is enabled):**
-
-```bash
-ssh -J ops@<app-ip>:<ssh-port> ops@10.0.1.20 "cd /home/docker/current && sudo -u docker docker compose ps"
-```
-
 #### Delete Protection
 
 Each environment controls whether critical resources can be destroyed via `delete_protection`. This sets both Hetzner's API-level `delete_protection` and OpenTofu's `prevent_destroy` lifecycle rule.
 
 ```hcl
 delete_protection = {
-  server = true        # app server (also enables rebuild_protection)
+  server = true        # server (also enables rebuild_protection)
   floating_ip = true   # IPv4 and IPv6 floating IPs
 }
 ```
 
-The variable has no default — every environment must explicitly set it. For production, enable all protections. For staging/dev, keep them `false` so you can freely recreate resources.
+The variable has no default — every environment must explicitly set it.
 
 ## Adding New Environment Variables to existing Environments
 
 ### Static Environment Variables
 
-New static values, like port numbers and token TTLs can be added either in
+New static values for your application, like port numbers and token TTLs can be added either in
 `terraform/environments/_shared/global.tfvars` in `base_env_vars` for all environments or in
 `terraform/environments/<env>/2_local.auto.tfvars` in `app_env_vars` for a specific environment.
 
 ### External Secrets as Environment Variables
 
-If you need to pass API keys, login credentials or other secrets to your application, they need to be provided through `env.sh`. For global secrets, use the root `env.sh`, for environment-specific secrets, use the environment-specific `terraform/environments/<env>/env.sh`.
+If you need to pass API keys, login credentials, or other secrets to your application, they need to be provided through `env.sh`. For global secrets, use the root `env.sh`, for environment-specific secrets, use the environment-specific `terraform/environments/<env>/env.sh`.
 
 - Define a new `TF_VAR_<name>` in `env.sh.example` and in your local `env.sh`
 - Define a new variable in `terraform/environments/_shared/variables.tf`
@@ -281,19 +270,6 @@ After `./tf.sh apply <env>`, the variable will be available after your next depl
 
 ## Accessing Generated Credentials and Values
 
-Avoid showing secrets in your terminal. Users of macOS can use `pbcopy` to copy the output to the clipboard. Users of linux can use `xclip --clipboard --input` or `xsel -selection clipboard`
-instead:
-
-```bash
-./tf.sh foobar output --raw traefik_dashboard_password | pbcopy
-```
-
-Traefik dashboard credentials are auto-generated per environment (username: `admin`):
-
-```bash
-./tf.sh foobar output traefik_dashboard_password
-```
-
 Dynamic SSH Port:
 
 ```bash
@@ -303,26 +279,33 @@ Dynamic SSH Port:
 IP addresses:
 
 ```bash
-./tf.sh foobar output server_ip
-./tf.sh foobar output server_ip_v6
+./tf.sh foobar output server_ipv4
+./tf.sh foobar output server_ipv6
+```
+
+Traefik dashboard credentials are auto-generated per environment (username: `admin`):
+
+```bash
+./tf.sh foobar output traefik_dashboard_password
 ```
 
 ## Application Server Structure
 
-Three users with distinct roles:
+The server has three users with different roles:
 
-| User       | Purpose                        | SSH access                       |
-|------------|--------------------------------|----------------------------------|
-| **ops**    | Admin SSH, backups, monitoring | Ops SSH keys (Hetzner project)   |
-| **docker** | Docker, app runtime            | Deploy key (CI/CD only)          |
-| **root**   | System services only           | Disabled (`PermitRootLogin no`)  |
+| User       | Purpose                        | SSH access                     |
+|------------|--------------------------------|--------------------------------|
+| **ops**    | Admin SSH, backups, monitoring | Ops SSH keys (Hetzner project) |
+| **docker** | Docker, app runtime            | Deploy key (CI/CD only)        |
+| **root**   | System services only           | SSH login is disabled          |
 
 - Authorized developers login via their SSH keys as `ops`
-- The `dkr` shell function (defined in `~/.bashrc`) runs commands as the `docker` user from `/home/docker/current`. For example: `dkr docker compose ps`. It is a shortcut for `cd /home/docker/current && sudo -u docker`.
-- Secrets are **not** in cloud-init — they are pushed via Ansible playbooks after cloud-init completes
+- The `dkr` shell function runs commands as the `docker` user from `/home/docker/current`. For example: `dkr docker compose ps`
+- Cloud-init is only used for basic setup
+- Secrets are provisioned via Ansible after cloud-init completes
 - Backups, monitoring scripts, and crontabs are owned by `ops` under `~/scripts/` and `~/logs/`
 - Compose files, `.env`, traefik config, and letsencrypt certs live in `/home/docker/current`
-- Database data is stored separately at `/home/docker/postgresql` (not backed up directly but via `pg_dump` and `borg`)
+- Database data is stored separately at `/home/docker/postgresql` and not backed up directly
 
 ## Backups (Borg + Hetzner StorageBox)
 
@@ -330,7 +313,7 @@ Setting the `backup` variable enables automated Borg backups of `/home/docker/cu
 
 **Retention:** 48 hourly, 7 daily, 4 weekly, 6 monthly, 1 yearly.
 
-Runs every hour via the `ops` user's crontab. Emails on failure. To temporarily pause automatic backups (e.g. during a restore), create `~/.backup-paused`. The backup script will skip and send a notification email until the file is removed.
+Runs hourly via the `ops` user's crontab. Emails on failure. To temporarily pause automatic backups (e.g. during a restore), create `~/.backup-paused`. The backup script will skip and send a notification email until the file is removed.
 
 SSH key installation on the StorageBox and borg repository initialization happen automatically via Ansible playbooks after cloud-init completes.
 
@@ -349,8 +332,7 @@ cat ~/logs/borg-backup.log
 # === Backup finished: Mon Feb 23 03:30:03 PM UTC 2026 ===
 ```
 
-Each environment gets its own StorageBox **subaccount** (created automatically), chrooted to
-`<project>/<environment>/`. Each server's borg repo lives at `./borg` within its subaccount.
+Each environment gets its own StorageBox **subaccount** created by terraform in a new subfolder structure: `<project>/<environment>/`. Each server's borg repo lives at `./borg` within the subaccount.
 
 ### Borg Helper Script
 
@@ -379,14 +361,11 @@ Ansible's `borg init` uses this helper internally. The automated backup script (
 
 ### PostgreSQL Backups (pg_dump)
 
-When backups are enabled and a PostgreSQL database is present, a `pg-dump.sh` script is deployed alongside the Borg backup scripts. It runs automatically as a pre-backup hook. `borg-backup.sh`
-checks for an executable `~/scripts/pg-dump.sh` and calls it before creating the archive.
-
-**How it works:**
+the `pg-dump.sh` script is created alongside the Borg backup scripts. `borg-backup.sh` checks for an executable `~/scripts/pg-dump.sh` and calls it before creating the archive.
 
 1. `pg-dump.sh` runs `pg_dump --format=directory` inside the database container
 2. The dump is tar-streamed to `/home/docker/current/pgdump/` on local disk
-3. Borg archives the dump as part of `/home/docker/current` (raw DB data at `/home/docker/postgresql` is outside the backup path)
+3. Borg archives the dump as part of `/home/docker/current`
 4. After Borg completes, the dump is cleaned up
 
 The directory format creates one file per table, which helps borg to only back up changed tables.
@@ -397,11 +376,9 @@ The directory format creates one file per table, which helps borg to only back u
 
 **Until the first CI/CD deployment, `pg-dump.sh` will fail**, when the database is on the same server (no running database service yet). The backup script will abort and send an alert email. This is expected and resolves after the first deployment.
 
-
 ### Restoring from a Backup
 
-Backups cover `/home/docker/current` (compose files, `.env`, traefik config, letsencrypt certs) plus `pg_dump` output
-(if a database is present). Docker images are not included — re-pull them after a restore via CI/CD deployment.
+Backups cover `/home/docker/current` (compose files, `.env`, traefik config, letsencrypt certs) plus `pg_dump` output. Docker images are not included and you need to pull them again after a restore.
 
 #### How to restore a full backup
 
@@ -471,7 +448,7 @@ If you want to restore only specific tables, you can do the restore process manu
 sudo ~/scripts/borg-restore.sh
 sudo ~/scripts/borg-restore.sh <archive-name> home/docker/current/pgdump
 
-# 2. Copy the database dump into the container and ...
+# 2. Copy the database dump into the container
 dkr docker compose exec -T database bash -c 'rm -rf /tmp/pgdump && mkdir -p /tmp/pgdump'
 tar cf - -C /home/docker/current/pgdump . | dkr docker compose exec -T database bash -c 'tar xf - -C /tmp/pgdump'
 
@@ -519,3 +496,17 @@ When changing `server_type` or `location`, the module protects against data corr
         ├── environment/     # Reusable environment module
         └── server/          # Base server module (Packer image + Ansible provisioning)
 ```
+
+## References
+
+This boilerplate is possible due to great documentation of the tools used in this project. In addition, there were some great resources that helped me get started:
+
+- https://docs.cloud-init.io/en/latest/reference/examples.html - See what is possible with cloud-init as it was new to me
+- https://community.hetzner.com/tutorials/custom-os-images-with-packer - Nice and short tutorial to get into Hetzner + Packer
+- https://github.com/hetznercloud/apps – Hetzner's own images built with Packer were a great starting point
+- https://community.hetzner.com/tutorials/install-and-configure-borgbackup - Great quick start to get into setting up Borg with Hetzner StorageBox
+- https://community.hetzner.com/tutorials/howto-hcloud-s3-terraform-backend - Source for some basics about using Hetzner S3 as the Terraform backend
+
+## Usage of AI
+
+Claude Opus was used to speed up the development of the boilerplate. See [AI.md](./AI.md) for more information on how AI was used.
