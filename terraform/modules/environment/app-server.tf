@@ -23,6 +23,7 @@ module "app-server" {
 
   floating_ips_enabled = true
   floating_ip_location = coalesce(var.floating_ip_location, var.location)
+  floating_ip_protection = var.delete_protection.floating_ip
 
   private_network_enabled = true
   private_network_id      = hcloud_network.environment.id
