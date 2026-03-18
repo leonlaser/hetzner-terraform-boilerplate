@@ -83,12 +83,6 @@ runcmd:
 
   # Apply SSH hardening (new port, PermitRootLogin no, AllowUsers)
   - systemctl restart ssh
-
-  # Cronjobs (ops user)
-  - su - ops -c 'echo "0 * * * * /home/ops/scripts/check-reboot-required.sh" | crontab -'
-%{ if backup_enabled }
-  - su - ops -c '(crontab -l; echo "30 * * * * sudo /home/ops/scripts/borg-backup.sh") | crontab -'
-%{ endif }
 %{ if length(appended_runcmd) > 0 }
 
   # Additional commands

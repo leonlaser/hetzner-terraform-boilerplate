@@ -29,3 +29,15 @@
         dest: /home/ops/.ssh/internal_key
         mode: "0600"
       no_log: true
+
+    - name: Copy check-reboot-required script
+      ansible.builtin.copy:
+        src: check-reboot-required.sh
+        dest: /home/ops/scripts/check-reboot-required.sh
+        mode: "0755"
+
+    - name: Configure check-reboot-required crontab
+      ansible.builtin.cron:
+        name: "check reboot required"
+        minute: "0"
+        job: "/home/ops/scripts/check-reboot-required.sh"

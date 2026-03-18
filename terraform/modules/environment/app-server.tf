@@ -67,6 +67,10 @@ module "app-server" {
         swap_size   = tostring(var.swap_size)
         database_ip = var.database != null ? local.internal_ips.database : ""
       }
+      file_hashes = [
+        filesha256("${path.module}/ansible/files/pg-dump.sh"),
+        filesha256("${path.module}/ansible/files/pg-restore.sh"),
+      ]
     }
   ]
 }

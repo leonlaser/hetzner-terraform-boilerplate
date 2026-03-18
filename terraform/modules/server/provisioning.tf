@@ -15,6 +15,39 @@ locals {
     "-o UserKnownHostsFile=/dev/null",
     "-o ProxyCommand=\"ssh -W %h:%p -p ${var.ansible_bastion_port} -i ${var.ansible_bastion_private_key_file} -o StrictHostKeyChecking=accept-new ${var.ansible_bastion_user}@${var.ansible_bastion_host}\"",
   ]) : "-o StrictHostKeyChecking=accept-new"
+
+  # File hashes for change detection — triggers Ansible re-runs when scripts change
+  provision_files_hash = sha256(join("", [
+    filesha256("${path.module}/ansible/provision.yml"),
+    filesha256("${path.module}/ansible/files/check-reboot-required.sh"),
+  ]))
+
+  backup_files_hash = sha256(join("", [
+    filesha256("${path.module}/ansible/backup.yml"),
+    filesha256("${path.module}/ansible/files/backup.sh"),
+    filesha256("${path.module}/ansible/files/borg.sh"),
+  ]))
+
+  additional_playbooks_hash = sha256(join("", flatten([
+    for pb in var.ansible_playbooks : concat([filesha256(pb.playbook)], pb.file_hashes)
+  ])))
+}
+
+# -----------------------------------------------------------------------------
+# Change detection: trigger Ansible re-runs when playbook or script files change
+# -----------------------------------------------------------------------------
+resource "terraform_data" "provision_files_hash" {
+  input = local.provision_files_hash
+}
+
+resource "terraform_data" "backup_files_hash" {
+  count = var.backup_enabled ? 1 : 0
+  input = local.backup_files_hash
+}
+
+resource "terraform_data" "additional_playbooks_hash" {
+  count = length(var.ansible_playbooks) > 0 ? 1 : 0
+  input = local.additional_playbooks_hash
 }
 
 # -----------------------------------------------------------------------------
@@ -41,7 +74,10 @@ resource "ansible_playbook" "provision" {
   ]
 
   lifecycle {
-    replace_triggered_by = [hcloud_server.server.id]
+    replace_triggered_by = [
+      hcloud_server.server.id,
+      terraform_data.provision_files_hash,
+    ]
   }
 }
 
@@ -65,7 +101,10 @@ resource "ansible_playbook" "additional" {
   depends_on = [ansible_playbook.provision]
 
   lifecycle {
-    replace_triggered_by = [hcloud_server.server.id]
+    replace_triggered_by = [
+      hcloud_server.server.id,
+      terraform_data.additional_playbooks_hash,
+    ]
   }
 }
 
@@ -100,6 +139,9 @@ resource "ansible_playbook" "backup" {
   depends_on = [ansible_playbook.provision, ansible_playbook.additional]
 
   lifecycle {
-    replace_triggered_by = [hcloud_server.server.id]
+    replace_triggered_by = [
+      hcloud_server.server.id,
+      terraform_data.backup_files_hash,
+    ]
   }
 }
