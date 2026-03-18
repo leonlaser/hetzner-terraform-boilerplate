@@ -151,11 +151,13 @@ jobs:
       matrix:
         include:
           - image: frontend
+            context: ./docker/example-services/frontend
           - image: backend
+            context: ./docker/example-services/backend
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - uses: docker/setup-buildx-action@v3
 
@@ -167,11 +169,13 @@ jobs:
 
       - name: Retag image with version
         run: |
-          PREV_SHA=$(git rev-parse --short=7 HEAD~1)
+          # Find the commit that last changed this image's Docker source files.
+          LAST_SHA=$(git log -1 --format='%h' -- '${{ matrix.context }}')
           IMAGE="ghcr.io/${{ github.repository }}/${{ matrix.image }}"
           TAG="${{ needs.release.outputs.tag_name }}"
+          echo "Retagging ${IMAGE}:sha-${LAST_SHA} → ${TAG}, latest"
           docker buildx imagetools create \
-            "${IMAGE}:sha-${PREV_SHA}" \
+            "${IMAGE}:sha-${LAST_SHA}" \
             --tag "${IMAGE}:${TAG}" \
             --tag "${IMAGE}:latest"
 
