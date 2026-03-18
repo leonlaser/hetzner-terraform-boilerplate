@@ -3,6 +3,7 @@ variable "ansible_playbooks" {
   type = list(object({
     playbook   = string
     extra_vars = optional(map(string), {})
+    file_hashes = optional(list(string), [])
   }))
   default = []
 }

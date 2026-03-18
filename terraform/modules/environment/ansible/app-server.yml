@@ -62,13 +62,13 @@
 
           echo "=== Pre-deploy backup started: $(date) ==="
 
-          # App backup via borg
-          sudo /home/ops/scripts/borg-backup.sh
+          # App backup
+          /home/ops/scripts/backup.sh
 
           {% if database_ip | default('') | length > 0 %}
           # Database backup (dedicated DB server)
           ssh -i ~/.ssh/internal_key -o StrictHostKeyChecking=accept-new {{ database_ip }} \
-            "sudo /home/ops/scripts/borg-backup.sh"
+            "/home/ops/scripts/backup.sh"
           {% endif %}
 
           echo "=== Pre-deploy backup finished: $(date) ==="

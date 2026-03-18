@@ -5,6 +5,18 @@
   gather_facts: false
 
   tasks:
+    - name: Copy borg helper script
+      ansible.builtin.copy:
+        src: borg.sh
+        dest: /home/ops/scripts/borg.sh
+        mode: "0755"
+
+    - name: Copy backup orchestrator script
+      ansible.builtin.copy:
+        src: backup.sh
+        dest: /home/ops/scripts/backup.sh
+        mode: "0755"
+
     - name: Write borg environment file
       ansible.builtin.copy:
         content: "{{ borg_env_content }}"
@@ -45,3 +57,9 @@
       register: borg_init_result
       failed_when: false
       changed_when: borg_init_result.rc == 0
+
+    - name: Configure backup crontab
+      ansible.builtin.cron:
+        name: "borg backup"
+        minute: "30"
+        job: "/home/ops/scripts/backup.sh"

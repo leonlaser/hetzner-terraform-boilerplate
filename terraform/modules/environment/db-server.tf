@@ -60,6 +60,10 @@ module "db-server" {
           db_listen_ip = local.internal_ips.database
         })
       }
+      file_hashes = [
+        filesha256("${path.module}/ansible/files/pg-dump.sh"),
+        filesha256("${path.module}/ansible/files/pg-restore.sh"),
+      ]
     }
   ]
 }

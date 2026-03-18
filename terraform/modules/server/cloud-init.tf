@@ -41,8 +41,3 @@ locals {
     })
   })
 }
-
-resource "local_file" "cloud_init" {
-  content  = local.cloud_init
-  filename = "debug-cloud-init.yaml"
-}

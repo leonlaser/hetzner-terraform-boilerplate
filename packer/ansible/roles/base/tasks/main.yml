@@ -51,26 +51,18 @@
     - { path: /home/ops/logs, mode: "0755" }
     - { path: /home/ops/scripts, mode: "0755" }
 
-- name: Copy borg helper script
-  ansible.builtin.copy:
-    src: borg.sh
-    dest: /home/ops/scripts/borg.sh
-    owner: ops
-    group: ops
-    mode: "0755"
-
-- name: Copy check-reboot-required script
-  ansible.builtin.copy:
-    src: check-reboot-required.sh
-    dest: /home/ops/scripts/check-reboot-required.sh
-    owner: ops
-    group: ops
-    mode: "0755"
+- name: Create root scripts directory
+  ansible.builtin.file:
+    path: /root/scripts
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
 
 - name: Copy borg-backup script
   ansible.builtin.copy:
     src: borg-backup.sh
-    dest: /home/ops/scripts/borg-backup.sh
+    dest: /root/scripts/borg-backup.sh
     owner: root
     group: root
     mode: "0755"
@@ -78,7 +70,7 @@
 - name: Copy borg-restore script
   ansible.builtin.copy:
     src: borg-restore.sh
-    dest: /home/ops/scripts/borg-restore.sh
+    dest: /root/scripts/borg-restore.sh
     owner: root
     group: root
     mode: "0755"
@@ -87,6 +79,6 @@
   ansible.builtin.copy:
     dest: /etc/sudoers.d/ops
     content: |
-      ops ALL=(root) NOPASSWD: /home/ops/scripts/borg-backup.sh, /home/ops/scripts/borg-restore.sh
+      ops ALL=(root) NOPASSWD: /root/scripts/borg-backup.sh, /root/scripts/borg-restore.sh
     mode: "0440"
     validate: visudo -cf %s
